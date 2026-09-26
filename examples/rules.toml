@@ -1,0 +1,14 @@
+[display_url]
+required = true                 # blocking: TEXT_AD requires DisplayUrlPath
+
+[titles]
+product_words = ["товар", "услуга", "каталог", "доставка"]
+mode = "warn"                   # title without listed word -> warning
+
+[extensions]
+require_sitelinks = "warn"
+require_callouts = "warn"
+
+[changes]
+max_budget_ratio = 1.3          # budget change over 1.3x -> warning
+max_bid_ratio = 2.0

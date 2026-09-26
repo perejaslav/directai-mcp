@@ -1,0 +1,1576 @@
+"""Read ads_list + write ads_create/update/state (steps 4-5)."""
+
+from __future__ import annotations
+
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+from directai_mcp.api.errors import DirectError
+from directai_mcp.catalog.common import (
+    GetActionParams,
+    chunk,
+    finalize,
+    map_accounts,
+    split_request,
+)
+from directai_mcp.catalog.registry import Ctx, action, write_action
+from directai_mcp.config import AccountEntry
+from directai_mcp.safety import adtext as _adtext
+from directai_mcp.safety.rules import check_title, load_rules
+
+FIELDS = ["Id", "CampaignId", "AdGroupId", "Status", "State", "Type",
+          # v1.1.25: причина статуса/отклонения.
+          "StatusClarification"]
+TEXT_FIELDS = [
+    "Title",
+    "Title2",
+    "Text",
+    "Href",
+    "DisplayUrlPath",
+    "SitelinkSetId",
+    "AdExtensions",
+    # v1.1.25: модерация компонентов (ref-v5/ads/get).
+    "DisplayUrlPathModeration",
+    "VCardModeration",
+    "SitelinksModeration",
+    "AdImageModeration",
+    "TurboPageModeration",
+    "VideoExtension",
+]
+RESPONSIVE_FIELDS = [
+    "Titles",
+    "Texts",
+    "Href",
+    "DisplayUrlPath",
+    "SitelinkSetId",
+    "AdExtensions",
+    # v1.1.25: модерация компонентов (ref-v5/ads/get).
+    "DisplayUrlPathModeration",
+    "SitelinksModeration",
+    "AdImages",
+    "VideoExtensions",
+]
+
+NO_DISPLAY_URL = "НЕТ"
+
+
+def display_url(value: object) -> str:
+    """Display URL or an eye-catching НЕТ mark when empty."""
+    if isinstance(value, str) and value:
+        return value
+    return NO_DISPLAY_URL
+
+
+class AdsListParams(GetActionParams):
+    campaign_ids: list[int] = Field(default_factory=list)
+    adgroup_ids: list[int] = Field(default_factory=list)
+    ad_ids: list[int] = Field(default_factory=list)
+
+
+def _cut(text: str, limit: int = 120) -> str:
+    return text if len(text) <= limit else text[:limit] + "…"
+
+
+def _rejected(block: object) -> tuple[bool, str]:
+    """v1.1.25: (отклонён ли компонент, причина).
+
+    Формат единый: ExtensionModeration и элементы Titles/Texts/AdImages/
+    VideoExtensions несут Status + StatusClarification (ref-v5/ads/get).
+    """
+    if not isinstance(block, dict):
+        return False, ""
+    if block.get("Status") != "REJECTED":
+        return False, ""
+    clar = block.get("StatusClarification")
+    return True, str(clar) if clar else ""
+
+
+def _file_joined(value: str, md_file: bool) -> str:
+    """v1.1.23: полный набор в файле; в MD « / », иначе « | »."""
+    return value.replace(" | ", " / ") if md_file else value
+
+
+def _extract(ad: dict) -> dict:
+    """Title/text/href/display/sitelink-set/extensions across ad types."""
+    out = {
+        "title": "—",
+        "text": "—",
+        "href": "—",
+        "display": "",
+        "set_id": None,
+        "ext_ids": [],
+        # v1.1.25: отклонённые компоненты («частично отклонено») + причины.
+        "partial": [],
+        "partial_why": {},
+    }
+
+    def _note(name: str, block: object) -> None:
+        bad, why = _rejected(block)
+        if bad:
+            out["partial"].append(name)
+            if why:
+                out["partial_why"][name] = why
+
+    text_ad = ad.get("TextAd")
+    if isinstance(text_ad, dict):
+        title = str(text_ad.get("Title") or "")
+        if text_ad.get("Title2"):
+            title += " / " + str(text_ad["Title2"])
+        out["title"] = _cut(title) if title else "—"
+        out["text"] = _cut(str(text_ad.get("Text") or "—"))
+        out["titles_all"] = title or "—"
+        out["texts_all"] = str(text_ad.get("Text") or "—")
+        for name, key in (("Отображаемая ссылка", "DisplayUrlPathModeration"),
+                          ("Визитка", "VCardModeration"),
+                          ("Быстрые ссылки", "SitelinksModeration"),
+                          ("Изображение", "AdImageModeration"),
+                          ("Турбо-страница", "TurboPageModeration")):
+            _note(name, text_ad.get(key))
+        _note("Видео", text_ad.get("VideoExtension"))
+        out["href"] = str(text_ad.get("Href") or "—")
+        out["display"] = str(text_ad.get("DisplayUrlPath") or "")
+        out["set_id"] = text_ad.get("SitelinkSetId")
+        out["ext_ids"] = [
+            e.get("AdExtensionId")
+            for e in (text_ad.get("AdExtensions") or [])
+            if isinstance(e, dict) and e.get("AdExtensionId") is not None
+        ]
+        return out
+    responsive = ad.get("ResponsiveAd")
+    if isinstance(responsive, dict):
+        titles = [
+            t.get("Title")
+            for t in (responsive.get("Titles") or [])
+            if isinstance(t, dict) and t.get("Title")
+        ]
+        texts = [
+            t.get("Text")
+            for t in (responsive.get("Texts") or [])
+            if isinstance(t, dict) and t.get("Text")
+        ]
+        # v1.1.23: inline — первый + счётчик (полный набор резался _cut на
+        # 120 символах и выглядел как «первый из 3» при реальных 7);
+        # полный набор — только в CSV/JSON через « | ».
+        out["title"] = (
+            f"{titles[0]} ({len(titles)} вариантов)" if titles else "—"
+        )
+        out["text"] = (
+            f"{texts[0]} ({len(texts)} вариантов)" if texts else "—"
+        )
+        out["titles_all"] = " | ".join(titles)
+        out["texts_all"] = " | ".join(texts)
+        for pos, item in enumerate(responsive.get("Titles") or [], start=1):
+            bad, why = _rejected(item)
+            if bad:
+                name = f"Заголовок {pos}"
+                out["partial"].append(name)
+                if why:
+                    out["partial_why"][name] = why
+        for pos, item in enumerate(responsive.get("Texts") or [], start=1):
+            bad, why = _rejected(item)
+            if bad:
+                name = f"Текст {pos}"
+                out["partial"].append(name)
+                if why:
+                    out["partial_why"][name] = why
+        images = responsive.get("AdImages")
+        items = images.get("Items") if isinstance(images, dict) else None
+        for item in items or []:
+            bad, why = _rejected(item)
+            if bad:
+                out["partial"].append("Изображение")
+                if why:
+                    out["partial_why"]["Изображение"] = why
+                break
+        _note("Отображаемая ссылка",
+              responsive.get("DisplayUrlPathModeration"))
+        _note("Быстрые ссылки", responsive.get("SitelinksModeration"))
+        videos = responsive.get("VideoExtensions")
+        vitems = videos.get("Items") if isinstance(videos, dict) else None
+        for item in vitems or []:
+            bad, why = _rejected(item)
+            if bad:
+                out["partial"].append("Видео")
+                if why:
+                    out["partial_why"]["Видео"] = why
+                break
+        out["href"] = str(responsive.get("Href") or "—")
+        out["display"] = str(responsive.get("DisplayUrlPath") or "")
+        out["set_id"] = responsive.get("SitelinkSetId")
+        out["ext_ids"] = [
+            e.get("AdExtensionId")
+            for e in (responsive.get("AdExtensions") or [])
+            if isinstance(e, dict) and e.get("AdExtensionId") is not None
+        ]
+        return out
+    dynamic = ad.get("DynamicTextAd")
+    if isinstance(dynamic, dict):
+        out["text"] = _cut(str(dynamic.get("Text") or "—"))
+        out["titles_all"] = "—"
+        out["texts_all"] = str(dynamic.get("Text") or "—")
+        for name, key in (("Визитка", "VCardModeration"),
+                          ("Быстрые ссылки", "SitelinksModeration"),
+                          ("Изображение", "AdImageModeration")):
+            _note(name, dynamic.get(key))
+        out["set_id"] = dynamic.get("SitelinkSetId")
+        out["ext_ids"] = [
+            e.get("AdExtensionId")
+            for e in (dynamic.get("AdExtensions") or [])
+            if isinstance(e, dict) and e.get("AdExtensionId") is not None
+        ]
+        return out
+    return out
+
+
+@action(
+    "ads_list",
+    "read",
+    "Объявления: DisplayUrlPath, быстрые ссылки и уточнения",
+    (
+        "объявления",
+        "ads",
+        "креативы",
+        "тексты объявлений",
+        "быстрые ссылки",
+        "уточнения",
+        "displayurl",
+        "ссылка",
+        "ссылки",
+        "href",
+        "домен",
+        "url",
+        "адрес",
+    ),
+    AdsListParams,
+)
+async def _list(ctx: Ctx, params: BaseModel) -> str:
+    assert isinstance(params, AdsListParams)
+    if not params.campaign_ids and not params.adgroup_ids and not params.ad_ids:
+        return "Ошибка: укажите campaign_ids, adgroup_ids или ad_ids."
+    mark = "[ПЕСОЧНИЦА] " if ctx.sandbox else ""
+
+    async def fetch(entry: AccountEntry, client):
+        ads: list[dict] = []
+        for ids in chunk(params.campaign_ids, 10):
+            ads.extend(
+                await client.get_all(
+                    "ads",
+                    {
+                        "SelectionCriteria": {"CampaignIds": ids},
+                        "FieldNames": FIELDS,
+                        "TextAdFieldNames": TEXT_FIELDS,
+                        "ResponsiveAdFieldNames": RESPONSIVE_FIELDS,
+                    },
+                    entry.login,
+                    "Ads",
+                )
+            )
+        if params.adgroup_ids:
+            ads.extend(
+                await client.get_all(
+                    "ads",
+                    {
+                        "SelectionCriteria": {"AdGroupIds": params.adgroup_ids},
+                        "FieldNames": FIELDS,
+                        "TextAdFieldNames": TEXT_FIELDS,
+                        "ResponsiveAdFieldNames": RESPONSIVE_FIELDS,
+                    },
+                    entry.login,
+                    "Ads",
+                )
+            )
+        if params.ad_ids:
+            ads.extend(
+                await client.get_all(
+                    "ads",
+                    {
+                        "SelectionCriteria": {"Ids": params.ad_ids},
+                        "FieldNames": FIELDS,
+                        "TextAdFieldNames": TEXT_FIELDS,
+                        "ResponsiveAdFieldNames": RESPONSIVE_FIELDS,
+                    },
+                    entry.login,
+                    "Ads",
+                )
+            )
+        infos = [_extract(ad) for ad in ads]
+        set_ids = sorted({i["set_id"] for i in infos if i["set_id"] is not None})
+        ext_ids = sorted({i for i in (x for info in infos for x in info["ext_ids"])})
+        sitelinks: dict[int, str] = {}
+        if set_ids:
+            sets = await client.get_all(
+                "sitelinks",
+                {
+                    "SelectionCriteria": {"Ids": set_ids},
+                    "FieldNames": ["Id", "Sitelinks"],
+                },
+                entry.login,
+                "SitelinksSets",
+            )
+            for s in sets:
+                # v1.1.17: у быстрой ссылки видны и текст, и URL.
+                titles = [
+                    f"{ln.get('Title', '')} ({ln.get('Href') or '—'})"
+                    for ln in (s.get("Sitelinks") or [])
+                ]
+                sitelinks[s["Id"]] = ", ".join(titles)
+        callouts: dict[int, str] = {}
+        # v1.1.25: модерация уточнений (Status/StatusClarification, дока
+        # ref-v5/adextensions/get); отклонённое → «частично отклонено».
+        callout_rej: dict[int, tuple[str, str]] = {}
+        if ext_ids:
+            exts = await client.get_all(
+                "adextensions",
+                {
+                    "SelectionCriteria": {"Ids": ext_ids},
+                    "FieldNames": ["Id", "Type", "Status",
+                                   "StatusClarification"],
+                    "CalloutFieldNames": ["CalloutText"],
+                },
+                entry.login,
+                "AdExtensions",
+            )
+            for e in exts:
+                text = (e.get("Callout") or {}).get("CalloutText", "")
+                if text:
+                    callouts[e["Id"]] = text
+                if e.get("Status") == "REJECTED":
+                    clar = e.get("StatusClarification")
+                    callout_rej[e["Id"]] = (
+                        text or f"#{e['Id']}", str(clar) if clar else "")
+        return ads, sitelinks, callouts, callout_rej
+
+    results = await map_accounts(ctx, params.account, fetch)
+    entries = [e for e, _ in results]
+    columns = [
+        "Id",
+        "Type",
+        "State",
+        "Moderation",
+        # v1.1.25: причина статуса/отклонения + частично отклонённые компоненты.
+        "StatusClarification",
+        "PartialReject",
+        "Title",
+        "Text",
+        "Href",
+        "DisplayUrl",
+        "SitelinkSetId",
+        "Sitelinks",
+        "AdExtensionIds",
+        "Callouts",
+    ]
+    rows: list[dict] = []
+    errors: list[str] = []
+    # v1.1.23: полные наборы заголовков/текстов — только CSV/JSON (в inline
+    # агенты берут обрезанный первый и теряют варианты). В MD-файле « | »
+    # развалил бы таблицу (инвариант v1.1.17) — там разделитель « / ».
+    file_only = bool(params.output == "file" or params.save_as)
+    file_fmt = params.save_as or params.format
+    md_file = file_only and file_fmt == "md"
+    use_columns = list(columns)
+    if file_only:
+        pos = use_columns.index("Title") + 1
+        use_columns[pos:pos] = ["Titles"]
+        pos = use_columns.index("Text") + 1
+        use_columns[pos:pos] = ["Texts"]
+    for entry, payload in results:
+        if isinstance(payload, DirectError):
+            errors.append(f"⚠ {entry.login}: {payload.human_message()}")
+            continue
+        ads, sitelinks, callouts, callout_rej = payload
+        for ad in ads:
+            info = _extract(ad)
+            ext_texts = [callouts[i] for i in info["ext_ids"] if i in callouts]
+            # v1.1.25: отклонённые уточнения дописываем к частичным.
+            for eid in info["ext_ids"]:
+                if eid in callout_rej:
+                    text, why = callout_rej[eid]
+                    name = f"Уточнение «{text}»"
+                    if name not in info["partial"]:
+                        info["partial"].append(name)
+                    if why:
+                        info["partial_why"][name] = why
+            partial = ", ".join(info["partial"]) or "—"
+            clar = str(ad.get("StatusClarification") or "—").replace("|", "/")
+            rows.append(
+                {
+                    "_account": entry.login,
+                    "Id": ad.get("Id"),
+                    "Type": ad.get("Type"),
+                    "State": ad.get("State"),
+                    "Moderation": ad.get("Status"),
+                    "StatusClarification": _cut(clar, 300),
+                    "PartialReject": _cut(partial, 300),
+                    "Title": info["title"],
+                    "Text": info["text"],
+                    "Titles": _file_joined(info.get("titles_all", "—"), md_file),
+                    "Texts": _file_joined(info.get("texts_all", "—"), md_file),
+                    "Href": info["href"],
+                    "DisplayUrl": display_url(info["display"]),
+                    "SitelinkSetId": (
+                        info["set_id"] if info["set_id"] is not None else "—"
+                    ),
+                    "Sitelinks": _cut(sitelinks.get(info["set_id"] or -1, "—")),
+                    "AdExtensionIds": (
+                        ", ".join(str(i) for i in info["ext_ids"]) or "—"
+                    ),
+                    "Callouts": _cut(", ".join(ext_texts) if ext_texts else "—"),
+                }
+            )
+    display = (["_account"] if len(entries) > 1 else []) + use_columns
+    context = f"{mark}ads_list: {', '.join(e.login for e in entries)}."
+    return finalize(
+        ctx, context, "ads_list", display, rows, params.limit, params.save_as, errors,
+        output=params.output,
+        format=params.format,
+        account=params.account,
+    )
+
+
+class AdsUpdateParams(GetActionParams):
+    ad_ids: list[int] = Field(min_length=1)
+    title: str | None = None
+    title2: str | None = None
+    text: str | None = None
+    href: str | None = None
+    display_url_path: str | None = None
+    titles: list[str] | None = None
+    texts: list[str] | None = None
+    # v1.1.17: привязка расширений к объявлению (Ads.update).
+    sitelink_set_id: int | None = None
+    ad_extension_ids: list[int] | None = None
+    # v1.1.36: режим привязки уточнений: set — замена, add — добавить
+    # к текущим, remove — снять перечисленные.
+    extension_mode: Literal["set", "add", "remove"] = "set"
+
+
+_UPDATE_FIELDS = ("title", "title2", "text", "href", "display_url_path")
+_API_FIELDS = {
+    "title": "Title",
+    "title2": "Title2",
+    "text": "Text",
+    "href": "Href",
+    "display_url_path": "DisplayUrlPath",
+}
+_RESPONSIVE_FIELDS = ("titles", "texts", "href", "display_url_path")
+
+_ADS_GET_BODY = {
+    "FieldNames": ["Id", "Type"],
+    "TextAdFieldNames": [
+        "Title",
+        "Title2",
+        "Text",
+        "Href",
+        "DisplayUrlPath",
+        "SitelinkSetId",
+        "AdExtensions",
+    ],
+    "ResponsiveAdFieldNames": [
+        "Titles",
+        "Texts",
+        "Href",
+        "DisplayUrlPath",
+        "SitelinkSetId",
+        "AdExtensions",
+    ],
+}
+
+
+def ext_ids(sub: dict) -> list[int]:
+    """v1.1.17: AdExtensionId из AdExtensions[] (TEXT_AD/RESPONSIVE_AD)."""
+    return sorted(
+        e.get("AdExtensionId")
+        for e in (sub.get("AdExtensions") or [])
+        if isinstance(e, dict) and e.get("AdExtensionId") is not None
+    )
+
+
+async def _check_refs(
+    client, login: str, set_ids: list[int], extension_ids: list[int]
+) -> None:
+    """v1.1.17: набор ссылок и уточнения должны существовать в аккаунте."""
+    if set_ids:
+        found = await client.get_all(
+            "sitelinks",
+            {"SelectionCriteria": {"Ids": sorted(set(set_ids))}, "FieldNames": ["Id"]},
+            login,
+            "SitelinksSets",
+        )
+        have = {int(i["Id"]) for i in found if i.get("Id") is not None}
+        missing = [i for i in sorted(set(set_ids)) if i not in have]
+        if missing:
+            raise ValueError(f"наборы быстрых ссылок не найдены в {login}: {missing}.")
+    if extension_ids:
+        found = await client.get_all(
+            "adextensions",
+            {
+                "SelectionCriteria": {"Ids": sorted(set(extension_ids))},
+                "FieldNames": ["Id"],
+            },
+            login,
+            "AdExtensions",
+        )
+        have = {int(i["Id"]) for i in found if i.get("Id") is not None}
+        missing = [i for i in sorted(set(extension_ids)) if i not in have]
+        if missing:
+            raise ValueError(f"уточнения не найдены в {login}: {missing}.")
+
+
+def _bind_given(params: AdsUpdateParams) -> dict:
+    """Явно заданные поля привязки расширений (ads_update)."""
+    out: dict = {}
+    if params.sitelink_set_id is not None:
+        out["sitelink_set_id"] = params.sitelink_set_id
+    if params.ad_extension_ids is not None:
+        out["ad_extension_ids"] = list(params.ad_extension_ids)
+    return out
+
+
+def _bind_payload(bind_given: dict) -> dict:
+    """Тело Ads.update для расширений: SitelinkSetId + CalloutSetting(SET)."""
+    out: dict = {}
+    if "sitelink_set_id" in bind_given:
+        out["SitelinkSetId"] = bind_given["sitelink_set_id"]
+    if "ad_extension_ids" in bind_given:
+        out["CalloutSetting"] = {
+            "AdExtensions": [
+                {"AdExtensionId": i, "Operation": "SET"}
+                for i in bind_given["ad_extension_ids"]
+            ]
+        }
+    return out
+
+
+def _bind_before(sub: dict) -> dict:
+    """Снимок привязки до записи — для превью и журнала."""
+    return {
+        "sitelink_set_id": sub.get("SitelinkSetId"),
+        "ad_extension_ids": ext_ids(sub),
+    }
+
+
+def _counter(field: str, value: str | list | None) -> str:
+    """v1.1.35: счётчик «N/лимит» для превью (по каждому полю)."""
+    if isinstance(value, list):
+        single = {"titles": "title", "texts": "text"}.get(field, field)
+        return "[" + ", ".join(_counter(single, v) for v in value) + "]"
+    text = value or ""
+    if field in ("title", "titles"):
+        return f"{len(_adtext._effective(text))}/{_adtext.TITLE_MAX}"
+    if field == "title2":
+        base, _ = _adtext.counts(text)
+        return f"{base}/{_adtext.TITLE2_MAX}"
+    if field in ("text", "texts"):
+        base, _ = _adtext.counts(text)
+        return f"{base}/{_adtext.TEXT_MAX}"
+    if field == "display_url_path":
+        return f"{len(_adtext._effective(text))}/{_adtext.DISPLAY_MAX}"
+    if field == "href":
+        return f"{len(text)}/{_adtext.HREF_MAX}"
+    return "?"
+
+
+def _require_display(label: str, display: str | None, same_op: bool = False) -> None:
+    """v1.1.35: DisplayUrlPath обязателен при создании и изменении."""
+    if not (display or "").strip():
+        hint = " — укажите display_url_path в той же операции" if same_op else ""
+        raise ValueError(f"{label}: DisplayUrlPath обязателен{hint}.")
+
+
+def _merge_ext_ids(current: list[int], given: list[int], mode: str) -> list[int]:
+    """v1.1.36: итоговая привязка уточнений (set/add/remove)."""
+    if mode == "add":
+        return sorted(set(current) | set(given))
+    if mode == "remove":
+        return sorted(set(current) - set(given))
+    return list(given)
+
+
+def _bind_preview(label: str, before: dict, bind_given: dict) -> str:
+    if not bind_given:
+        return ""
+    changes = ", ".join(
+        f"{f}: {before.get(f)} → {value}" for f, value in bind_given.items()
+    )
+    return f"; {label}: {changes}"
+
+
+_REMOD_NOTE = "Изменение текста/ссылки отправит объявление на перемодерацию."
+_REMOD_FIELDS = frozenset({
+    "title", "title2", "text", "titles", "texts", "href", "display_url_path",
+})
+
+
+def _state_preview(before: dict) -> str:
+    """v1.1.17: текущее состояние объявления, если текстовые поля не меняются."""
+    titles = before.get("titles")
+    if titles is None:
+        titles = [before.get("title")] if before.get("title") else []
+    texts = before.get("texts")
+    if texts is None:
+        texts = [before.get("text")] if before.get("text") else []
+    parts = [
+        "заголовок "
+        + (" / ".join(f"«{t}»" for t in titles) if titles else "—"),
+        "текст "
+        + (" / ".join(f"«{t}»" for t in texts) if texts else "—"),
+        f"Href {before.get('href') or '—'}",
+        f"DisplayUrlPath {before.get('display_url_path') or '—'}",
+    ]
+    return ", ".join(parts)
+
+
+def _bind_note(item) -> str:
+    """v1.1.17: расширения в строке предпросмотра ads_create."""
+    parts: list[str] = []
+    if item.sitelink_set_id is not None:
+        parts.append(f"набор ссылок {item.sitelink_set_id}")
+    if item.ad_extension_ids:
+        parts.append(f"уточнений {len(item.ad_extension_ids)}")
+    return f" ({', '.join(parts)})" if parts else ""
+
+
+def _ad_preview(item, titles: str, texts: str) -> str:
+    """v1.1.17: в превью ads_create видны заголовок, текст, Href, DisplayUrlPath."""
+    parts = [titles]
+    title2 = getattr(item, "title2", None)
+    if title2:
+        parts.append(f"заголовок 2 «{title2}» ({_counter('title2', title2)})")
+    parts.append(f"текст {texts}")
+    parts.append(f"Href {item.href} ({_counter('href', item.href)})")
+    parts.append(
+        f"DisplayUrlPath {item.display_url_path or '—'} "
+        f"({_counter('display_url_path', item.display_url_path or '')})"
+    )
+    return ", ".join(parts) + _bind_note(item)
+
+
+def _create_counters(item, ad_type: str) -> str:
+    """v1.1.35: счётчики «N/лимит» по каждому полю создаваемого объявления."""
+    if ad_type == "TEXT_AD":
+        fields = [("title", item.title), ("text", item.text)]
+    else:
+        fields = (
+            [("titles", t) for t in item.titles]
+            + [("texts", t) for t in item.texts]
+        )
+    return ", ".join(f"{f} {_counter(f, v)}" for f, v in fields)
+
+
+def _create_text_mismatches(aid: int, ad_type: str, item: dict,
+                              sub: dict) -> list[str]:
+    """v1.1.35.1: сверка КАЖДОГО отправленного текстового поля с ответом."""
+    bad: list[str] = []
+
+    def _cmp(field: str, want, got) -> None:
+        if want is not None and got != want:
+            bad.append(f"{aid}.{field}: {got!r} != {want!r}")
+
+    if ad_type == "TEXT_AD":
+        title = item.get("title")
+        title2 = item.get("title2")
+        text_block = sub.get("TextAd") or {}
+        resp_block = sub.get("ResponsiveAd") or {}
+        if text_block:
+            for field, api in (("title", "Title"), ("title2", "Title2"),
+                               ("text", "Text"), ("href", "Href"),
+                               ("display_url_path", "DisplayUrlPath")):
+                _cmp(field, item.get(field), text_block.get(api))
+        elif resp_block:
+            # Конвертация в комбинаторное: Title2 либо склеен, либо отброшен.
+            glued = str(title or "")
+            if title2:
+                glued += ". " + str(title2)
+            titles = [t.get("Title", "") for t in resp_block.get("Titles", [])]
+            texts = [t.get("Text", "") for t in resp_block.get("Texts", [])]
+            first = titles[0] if titles else None
+            if first != glued:
+                if title2 and first == title:
+                    bad.append(f"{aid}.Title2: отброшен API (10254)")
+                else:
+                    bad.append(f"{aid}.Title: {first!r} != {glued!r}")
+            _cmp("Text", item.get("text"), texts[0] if texts else None)
+            _cmp("Href", item.get("href"), resp_block.get("Href"))
+            _cmp("DisplayUrlPath", item.get("display_url_path"),
+                 resp_block.get("DisplayUrlPath"))
+        else:
+            bad.append(f"{aid}: нет блоков TextAd/ResponsiveAd в ответе")
+    else:
+        resp_block = sub.get("ResponsiveAd") or {}
+        got_titles = [t.get("Title", "") for t in resp_block.get("Titles", [])]
+        got_texts = [t.get("Text", "") for t in resp_block.get("Texts", [])]
+        if got_titles != list(item.get("titles") or []):
+            bad.append(f"{aid}.Titles: {got_titles!r} != "
+                       f"{list(item.get('titles') or [])!r}")
+        if got_texts != list(item.get("texts") or []):
+            bad.append(f"{aid}.Texts: {got_texts!r} != "
+                       f"{list(item.get('texts') or [])!r}")
+        _cmp("Href", item.get("href"), resp_block.get("Href"))
+        _cmp("DisplayUrlPath", item.get("display_url_path"),
+             resp_block.get("DisplayUrlPath"))
+    return bad
+
+
+def _create_wanted_displays(params: dict) -> list[str | None]:
+    """v1.1.35: запрошенные DisplayUrlPath по порядку объявлений ads_create."""
+    items = params.get("text_ads") or []
+    if params.get("ad_type") != "TEXT_AD":
+        items = params.get("responsive_ads") or []
+    return [item.get("display_url_path") for item in items]
+
+
+def _create_wanted(params: dict) -> list[dict]:
+    """v1.1.17: запрошенная привязка по порядку объявлений ads_create."""
+    items = params.get("text_ads") or []
+    if params.get("ad_type") != "TEXT_AD":
+        items = params.get("responsive_ads") or []
+    wanted: list[dict] = []
+    for item in items:
+        want: dict = {}
+        if item.get("sitelink_set_id") is not None:
+            want["sitelink_set_id"] = item["sitelink_set_id"]
+        if item.get("ad_extension_ids"):
+            want["ad_extension_ids"] = sorted(item["ad_extension_ids"])
+        wanted.append(want)
+    return wanted
+
+
+
+def _responsive_before(current: dict) -> dict:
+    return {
+        "titles": [t.get("Title", "") for t in (current.get("Titles") or [])],
+        "texts": [t.get("Text", "") for t in (current.get("Texts") or [])],
+        "href": current.get("Href"),
+        "display_url_path": current.get("DisplayUrlPath"),
+    }
+
+
+def _titles_ok(rules, titles: list[str]) -> bool:
+    if not rules.product_words or rules.titles_mode != "warn":
+        return True
+    return any(
+        any(word.lower() in (title or "").lower() for word in rules.product_words)
+        for title in titles
+    )
+
+
+async def _prepare_ads_update(ctx: Ctx, entry: AccountEntry, params: BaseModel) -> dict:
+    assert isinstance(params, AdsUpdateParams)
+    text_given = {
+        f: getattr(params, f) for f in _UPDATE_FIELDS if getattr(params, f) is not None
+    }
+    resp_given = {
+        f: getattr(params, f)
+        for f in _RESPONSIVE_FIELDS
+        if getattr(params, f) is not None
+    }
+    bind_given = _bind_given(params)
+    if not text_given and not resp_given and not bind_given:
+        raise ValueError(
+            "укажите хотя бы одно поле: title, title2, text, href, "
+            "display_url_path, titles, texts, "
+            "sitelink_set_id, ad_extension_ids."
+        )
+    # v1.1.37: DisplayUrlPath обязателен в КАЖДОЙ операции update,
+    # независимо от текущего значения, — отказ до API.
+    if not (params.display_url_path or "").strip():
+        raise ValueError(
+            "DisplayUrlPath обязателен — "
+            "укажите display_url_path в той же операции."
+        )
+    rules = load_rules(ctx.data_dir / "rules.toml" if ctx.data_dir else None)
+    client = ctx.direct()
+    try:
+        items = await client.get_all(
+            "ads",
+            {"SelectionCriteria": {"Ids": params.ad_ids}, **_ADS_GET_BODY},
+            entry.login,
+            "Ads",
+        )
+        await _check_refs(
+            client,
+            entry.login,
+            [bind_given["sitelink_set_id"]] if "sitelink_set_id" in bind_given else [],
+            list(bind_given.get("ad_extension_ids", [])),
+        )
+    finally:
+        await client.aclose()
+    found = {int(i["Id"]): i for i in items if i.get("Id") is not None}
+    missing = [a for a in params.ad_ids if a not in found]
+    if missing:
+        raise ValueError(f"объявления не найдены: {missing}.")
+    before: dict = {}
+    preview_lines: list[str] = []
+    warnings: list[str] = []
+    request_ads: list[dict] = []
+    for aid in params.ad_ids:
+        ad_type = found[aid].get("Type")
+        if ad_type == "TEXT_AD":
+            if resp_given.keys() - {"href", "display_url_path"}:
+                raise ValueError(
+                    f"объявление {aid}: titles/texts только для RESPONSIVE_AD."
+                )
+            current = found[aid].get("TextAd") or {}
+            if not current:
+                raise ValueError(f"объявление {aid}: нет данных TextAd.")
+            before[aid] = {f: current.get(_API_FIELDS[f]) for f in _UPDATE_FIELDS}
+            before[aid].update(_bind_before(current))
+            resulting = dict(before[aid])
+            resulting.update(text_given)
+            # v1.1.35: DisplayUrlPath обязателен; у объявления без ссылки
+            # любое изменение — блок с требованием указать в той же операции.
+            _require_display(f"объявление {aid}",
+                             str(resulting.get("display_url_path") or ""),
+                             same_op=True)
+            # v1.1.35.1: сумма пары после правки заголовков — до API.
+            if set(text_given) & {"title", "title2"}:
+                err = _adtext.check_title_sum(
+                    f"объявление {aid}", str(resulting.get("title") or ""),
+                    str(resulting.get("title2") or "") or None)
+                if err:
+                    raise ValueError(err)
+            title_warn = check_title(rules, str(resulting.get("title") or ""))
+            if title_warn:
+                warnings.append(f"объявление {aid}: {title_warn}")
+            # v1.1.18: заданные тексты по правилам Директа (до apply).
+            # Проверяем только заданные поля: API валидирует присланное.
+            _given_checks = {
+                "title": lambda v: _adtext.check_title("title", v),
+                "title2": lambda v: _adtext.check_title2("title2", v),
+                "text": lambda v: _adtext.check_text("text", v),
+                "href": lambda v: _adtext.check_href("href", v),
+                "display_url_path": lambda v: _adtext.check_display(
+                    "display_url_path", v
+                ),
+            }
+            text_errors = [
+                err
+                for f, value in text_given.items()
+                if (err := _given_checks[f](value)) is not None
+            ]
+            if text_errors:
+                raise ValueError(
+                    f"объявление {aid}: " + "; ".join(text_errors)
+                )
+            # v1.1.36: итоговая привязка уточнений с учётом режима.
+            aid_bind = dict(bind_given)
+            if "ad_extension_ids" in aid_bind:
+                aid_bind["ad_extension_ids"] = _merge_ext_ids(
+                    before[aid].get("ad_extension_ids") or [],
+                    aid_bind["ad_extension_ids"], params.extension_mode)
+            changes = ", ".join(
+                f"{f} ({_counter(f, text_given[f])}): "
+                f"{before[aid][f]} → {text_given[f]}" for f in text_given
+            ) or _state_preview(before[aid])
+            if set(text_given) & _REMOD_FIELDS and _REMOD_NOTE not in warnings:
+                warnings.append(_REMOD_NOTE)
+            preview_lines.append(
+                f"{aid}: {changes}"
+                + _bind_preview("расширения", before[aid], aid_bind)
+            )
+            request_ads.append(
+                {
+                    "Id": aid,
+                    "TextAd": {
+                        **{_API_FIELDS[f]: text_given[f] for f in text_given},
+                        **_bind_payload(aid_bind),
+                    },
+                }
+            )
+        elif ad_type == "RESPONSIVE_AD":
+            if text_given.keys() - {"href", "display_url_path"}:
+                raise ValueError(
+                    f"объявление {aid}: title/title2/text только для TEXT_AD."
+                )
+            current = found[aid].get("ResponsiveAd") or {}
+            if not current:
+                raise ValueError(f"объявление {aid}: нет данных ResponsiveAd.")
+            snapshot = _responsive_before(current)
+            before[aid] = snapshot
+            before[aid].update(_bind_before(current))
+            resulting = dict(snapshot)
+            resulting.update(resp_given)
+            _require_display(f"объявление {aid}",
+                             str(resulting.get("display_url_path") or ""),
+                             same_op=True)
+            # v1.1.35.1: сумма первой пары после правки titles — до API.
+            if "titles" in resp_given:
+                pair = [str(t) for t in (resulting.get("titles") or [])]
+                if len(pair) >= 2:
+                    err = _adtext.check_title_sum(
+                        f"объявление {aid}", pair[0], pair[1])
+                    if err:
+                        raise ValueError(err)
+            if not _titles_ok(rules, [str(t) for t in resulting.get("titles", [])]):
+                warnings.append(
+                    f"объявление {aid}: заголовки без слов {rules.product_words}."
+                )
+            # v1.1.18: тексты по правилам Директа (итоговые значения:
+            # update всегда шлёт полные Titles/Texts; пустой текущий Href
+            # может жить на визитке — проверяем только заданный).
+            resp_errors = []
+            for i, title in enumerate(resulting.get("titles", [])):
+                err = _adtext.check_title(f"titles[{i}]", str(title))
+                if err:
+                    resp_errors.append(err)
+            for i, text in enumerate(resulting.get("texts", [])):
+                err = _adtext.check_text(f"texts[{i}]", str(text))
+                if err:
+                    resp_errors.append(err)
+            if resulting.get("href"):
+                err = _adtext.check_href(
+                    "href", str(resulting["href"])
+                )
+                if err:
+                    resp_errors.append(err)
+            if resulting.get("display_url_path"):
+                err = _adtext.check_display(
+                    "display_url_path", str(resulting["display_url_path"])
+                )
+                if err:
+                    resp_errors.append(err)
+            if resp_errors:
+                raise ValueError(
+                    f"объявление {aid}: " + "; ".join(resp_errors)
+                )
+            changes = ", ".join(
+                f"{f} ({_counter(f, resp_given[f])}): "
+                f"{snapshot[f]} → {resp_given[f]}" for f in resp_given
+            ) or _state_preview(before[aid])
+            if set(resp_given) & _REMOD_FIELDS and _REMOD_NOTE not in warnings:
+                warnings.append(_REMOD_NOTE)
+            aid_bind = dict(bind_given)
+            if "ad_extension_ids" in aid_bind:
+                aid_bind["ad_extension_ids"] = _merge_ext_ids(
+                    before[aid].get("ad_extension_ids") or [],
+                    aid_bind["ad_extension_ids"], params.extension_mode)
+            preview_lines.append(
+                f"{aid}: {changes}"
+                + _bind_preview("расширения", before[aid], aid_bind)
+            )
+            payload: dict = {}
+            if resp_given.get("titles") is not None:
+                payload["Titles"] = list(resp_given["titles"])
+            else:
+                payload["Titles"] = list(snapshot["titles"])
+            if resp_given.get("texts") is not None:
+                payload["Texts"] = list(resp_given["texts"])
+            else:
+                payload["Texts"] = list(snapshot["texts"])
+            if resp_given.get("href") is not None:
+                payload["Href"] = resp_given["href"]
+            if resp_given.get("display_url_path") is not None:
+                payload["DisplayUrlPath"] = resp_given["display_url_path"]
+            payload.update(_bind_payload(aid_bind))
+            request_ads.append({"Id": aid, "ResponsiveAd": payload})
+        else:
+            raise ValueError(
+                f"объявление {aid}: поддерживаются только TEXT_AD и RESPONSIVE_AD."
+            )
+    text_items = []
+    resp_items = []
+    for aid in params.ad_ids:
+        ad_type = found[aid].get("Type")
+        if ad_type == "TEXT_AD":
+            text_items.append(aid)
+        elif ad_type == "RESPONSIVE_AD":
+            resp_items.append(aid)
+    requests: list = []
+    if text_items:
+        requests.append(
+            (
+                "ads",
+                "update",
+                {"Ads": [r for r in request_ads if r["Id"] in text_items]},
+            )
+        )
+    if resp_items:
+        requests.append(
+            (
+                "ads",
+                "update",
+                {"Ads": [r for r in request_ads if r["Id"] in resp_items]},
+                "v501",
+            )
+        )
+    return {
+        "before": before,
+        "requests": requests,
+        "preview": "Будет выполнено:\n"
+        + "\n".join(f"- {line}" for line in preview_lines),
+        "warnings": warnings,
+    }
+
+
+async def _apply_ads_update(ctx: Ctx, entry: AccountEntry, plan) -> dict:
+    from directai_mcp.api.errors import DirectError, DirectUnverifiedError
+    from directai_mcp.catalog.common import summarize as _summarize
+
+    client = ctx.direct()
+    all_lines: list[str] = []
+    oks = totals = 0
+    response: dict = {}
+    try:
+        for service, method, body, version in (split_request(r) for r in plan.requests):
+            try:
+                result = await client.call(service, method, body, entry.login, version)
+            except DirectUnverifiedError:
+                raise
+            except DirectError as e:
+                return {
+                    "status": "failed",
+                    "lines": all_lines + [f"Ошибка API: {e.human_message()}"],
+                    "response": {"error": e.human_message()},
+                }
+            response[f"{service}.{method}.{version}"] = result
+            ids = [str(a.get("Id")) for a in body["Ads"]]
+            lines, ok = _summarize(ids, result.get("UpdateResults", []))
+            all_lines += lines
+            oks += ok
+            totals += len(ids)
+    finally:
+        await client.aclose()
+    status = "applied" if oks == totals else "failed" if oks == 0 else "partial"
+    return {"status": status, "lines": all_lines, "response": response}
+
+
+async def _verify_ads_update(ctx: Ctx, entry: AccountEntry, plan) -> dict:
+    params = plan.params
+    assert isinstance(params, dict)
+    text_given = {f: params[f] for f in _UPDATE_FIELDS if params.get(f) is not None}
+    resp_given = {f: params[f] for f in _RESPONSIVE_FIELDS if params.get(f) is not None}
+    bind_given = {
+        f: params[f]
+        for f in ("sitelink_set_id", "ad_extension_ids")
+        if params.get(f) is not None
+    }
+    client = ctx.direct()
+    try:
+        items = await client.get_all(
+            "ads",
+            {"SelectionCriteria": {"Ids": params["ad_ids"]}, **_ADS_GET_BODY},
+            entry.login,
+            "Ads",
+        )
+    finally:
+        await client.aclose()
+    found = {int(i["Id"]): i for i in items if i.get("Id") is not None}
+    after: dict = {}
+    bad: list[str] = []
+    mode = params.get("extension_mode", "set")
+    before_all = getattr(plan, "before", None) or {}
+    for aid in params["ad_ids"]:
+        item = found.get(aid, {})
+        sub = item.get("ResponsiveAd") or item.get("TextAd") or {}
+        if item.get("Type") == "RESPONSIVE_AD":
+            current = _responsive_before(sub)
+            after[aid] = current
+            for f, value in resp_given.items():
+                if current.get(f) != value:
+                    bad.append(f"{aid}.{f}: {current.get(f)!r} != {value!r}")
+        else:
+            after[aid] = {f: sub.get(_API_FIELDS[f]) for f in _UPDATE_FIELDS}
+            for f, value in text_given.items():
+                if after[aid][f] != value:
+                    bad.append(f"{aid}.{f}: {after[aid][f]!r} != {value!r}")
+        after[aid].update(_bind_before(sub))
+        for f, value in bind_given.items():
+            # v1.1.36: в режимах add/remove сверяем итоговый набор.
+            if f == "ad_extension_ids" and mode in ("add", "remove"):
+                snap = ((before_all.get(aid) or before_all.get(str(aid))) or {}
+                        ).get("ad_extension_ids") or []
+                value = _merge_ext_ids(list(snap), list(value), mode)
+            if after[aid][f] != value:
+                bad.append(f"{aid}.{f}: {after[aid][f]!r} != {value!r}")
+    display_empty = [
+        str(aid)
+        for aid in params["ad_ids"]
+        if not (after.get(aid, {}).get("display_url_path") or "").strip()
+    ]
+    if display_empty:
+        # v1.1.35: DisplayUrlPath обязателен — пустой read-back не подтверждаем.
+        return {
+            "after": after,
+            "ok": False,
+            "note": "read-back НЕ подтвердил: пустая отображаемая ссылка у "
+            + ", ".join(display_empty),
+        }
+    if bad:
+        return {
+            "after": after,
+            "ok": False,
+            "note": "read-back НЕ подтвердил: " + "; ".join(bad),
+        }
+    return {"after": after, "ok": True, "note": "подтверждено read-back."}
+
+
+write_action(
+    "ads_update",
+    "Изменение объявлений TEXT_AD и RESPONSIVE_AD",
+    ("изменить объявление", "ads", "update", "текст объявления", "заголовок"),
+    AdsUpdateParams,
+    prepare=_prepare_ads_update,
+    apply=_apply_ads_update,
+    verify=_verify_ads_update,
+)
+
+
+class TextAdCreate(BaseModel):
+    title: str
+    text: str
+    href: str
+    title2: str | None = None
+    display_url_path: str | None = None
+    # v1.1.17: расширения задаются сразу при создании (Ads.add).
+    sitelink_set_id: int | None = None
+    ad_extension_ids: list[int] = Field(default_factory=list)
+
+
+class ResponsiveAdCreate(BaseModel):
+    titles: list[str] = Field(min_length=1, max_length=7)
+    texts: list[str] = Field(min_length=1, max_length=3)
+    href: str
+    display_url_path: str | None = None
+    sitelink_set_id: int | None = None
+    ad_extension_ids: list[int] = Field(default_factory=list)
+
+
+class AdsCreateParams(GetActionParams):
+    adgroup_id: int
+    ad_type: Literal["TEXT_AD", "RESPONSIVE_AD"] = "TEXT_AD"
+    text_ads: list[TextAdCreate] = Field(default_factory=list)
+    responsive_ads: list[ResponsiveAdCreate] = Field(default_factory=list)
+
+
+class AdsStateParams(GetActionParams):
+    ad_ids: list[int] = Field(min_length=1)
+    operation: Literal["suspend", "resume", "archive", "moderate"]
+
+
+_ADS_EXPECTED = {
+    "suspend": "SUSPENDED",
+    "resume": "ON",
+    "archive": "ARCHIVED",
+    "moderate": "MODERATION",
+}
+_ADS_RESULT_KEY = {
+    "suspend": "SuspendResults",
+    "resume": "ResumeResults",
+    "archive": "ArchiveResults",
+    "moderate": "ModerateResults",
+}
+
+
+async def _campaign_type(client, login: str, adgroup_id: int) -> str | None:
+    """v1.1.18: тип кампании группы (предупреждение о конвертации TEXT_AD)."""
+    groups = await client.get_all(
+        "adgroups",
+        {
+            "SelectionCriteria": {"Ids": [adgroup_id]},
+            "FieldNames": ["Id", "CampaignId"],
+        },
+        login,
+        "AdGroups",
+    )
+    if not groups or groups[0].get("CampaignId") is None:
+        return None
+    camps = await client.get_all(
+        "campaigns",
+        {
+            "SelectionCriteria": {"Ids": [groups[0]["CampaignId"]]},
+            "FieldNames": ["Id", "Type"],
+        },
+        login,
+        "Campaigns",
+    )
+    if not camps:
+        return None
+    return camps[0].get("Type")
+
+
+def _conversion_note(
+    title: str, title2: str | None, campaign_type: str | None
+) -> str:
+    """v1.1.18: конвертация TEXT_AD живьём везде (10251 и в TEXT_CAMPAIGN,
+    26.09.2026); итоговый заголовок API склеивает через '. '."""
+    glued = f"{title}. {title2}" if title2 else title
+    if campaign_type == "UNIFIED_CAMPAIGN":
+        verdict = "будет сконвертировано в RESPONSIVE_AD"
+    else:
+        verdict = (
+            "API конвертирует TEXT_AD в RESPONSIVE_AD"
+            " (подтверждено живьём, 10251)"
+        )
+    return f"; ⚠ {verdict}, итоговый заголовок «{glued}»"
+
+
+async def _prepare_ads_create(ctx: Ctx, entry: AccountEntry, params: BaseModel) -> dict:
+    assert isinstance(params, AdsCreateParams)
+    rules = load_rules(ctx.data_dir / "rules.toml" if ctx.data_dir else None)
+    items = params.text_ads if params.ad_type == "TEXT_AD" else params.responsive_ads
+    # v1.1.18: тексты проверяем до любых API-вызовов (вместо 5002 на apply).
+    if params.ad_type == "TEXT_AD":
+        if not params.text_ads:
+            raise ValueError("text_ads пуст.")
+        if params.responsive_ads:
+            raise ValueError("responsive_ads не для TEXT_AD.")
+        for item in params.text_ads:
+            errors = _adtext.check_text_ad(
+                item.title, item.title2, item.text, item.href,
+                item.display_url_path,
+            )
+            # v1.1.35.1: сумма пары заголовков — до API (иначе 10254).
+            err = _adtext.check_title_sum("title", item.title, item.title2)
+            if err:
+                errors.append(err)
+            if errors:
+                raise ValueError(f"«{item.title}»: " + "; ".join(errors))
+    else:
+        if not params.responsive_ads:
+            raise ValueError("responsive_ads пуст.")
+        if params.text_ads:
+            raise ValueError("text_ads не для RESPONSIVE_AD.")
+        for item in params.responsive_ads:
+            errors = _adtext.check_responsive(
+                item.titles, item.texts, item.href, item.display_url_path
+            )
+            # v1.1.35.1: сумма первой пары заголовков — до API (политика
+            # от 10254: Titles[0]≈Title, Titles[1]≈Title2).
+            if len(item.titles) >= 2:
+                err = _adtext.check_title_sum(
+                    "titles", item.titles[0], item.titles[1])
+                if err:
+                    errors.append(err)
+            if errors:
+                raise ValueError(f"«{item.titles[0]}»: " + "; ".join(errors))
+    # v1.1.17: существование расширений проверяем до сборки тела.
+    set_ids = sorted(
+        {i.sitelink_set_id for i in items if i.sitelink_set_id is not None}
+    )
+    ext_ids = sorted({e for i in items for e in i.ad_extension_ids})
+    # v1.1.18 п.2: тип кампании для предупреждения о конвертации TEXT_AD.
+    campaign_type: str | None = None
+    if params.ad_type == "TEXT_AD":
+        client = ctx.direct()
+        try:
+            campaign_type = await _campaign_type(
+                client, entry.login, params.adgroup_id
+            )
+            if set_ids or ext_ids:
+                await _check_refs(client, entry.login, set_ids, ext_ids)
+        finally:
+            await client.aclose()
+    elif set_ids or ext_ids:
+        client = ctx.direct()
+        try:
+            await _check_refs(client, entry.login, set_ids, ext_ids)
+        finally:
+            await client.aclose()
+    bodies: list[dict] = []
+    preview_lines: list[str] = []
+    warnings: list[str] = []
+    if params.ad_type == "TEXT_AD":
+        for item in params.text_ads:
+            _require_display(f"«{item.title}»", item.display_url_path)
+            title_warn = check_title(rules, item.title)
+            if title_warn:
+                warnings.append(f"«{item.title}»: {title_warn}")
+            body: dict = {
+                "AdGroupId": params.adgroup_id,
+                "TextAd": {
+                    "Title": item.title,
+                    "Text": item.text,
+                    "Href": item.href,
+                    "Mobile": "NO",
+                },
+            }
+            if item.title2:
+                body["TextAd"]["Title2"] = item.title2
+            if item.display_url_path:
+                body["TextAd"]["DisplayUrlPath"] = item.display_url_path
+            if item.sitelink_set_id is not None:
+                body["TextAd"]["SitelinkSetId"] = item.sitelink_set_id
+            if item.ad_extension_ids:
+                body["TextAd"]["AdExtensionIds"] = list(item.ad_extension_ids)
+            bodies.append(body)
+            line = _ad_preview(item, f"TEXT_AD «{item.title}»", f"«{item.text}»")
+            line += f" [{_create_counters(item, 'TEXT_AD')}]"
+            line += _conversion_note(item.title, item.title2, campaign_type)
+            preview_lines.append(line)
+    else:
+        for item in params.responsive_ads:
+            _require_display(f"«{item.titles[0]}»", item.display_url_path)
+            if not _titles_ok(rules, item.titles):
+                warnings.append(
+                    f"«{item.titles[0]}»: заголовки без слов {rules.product_words}."
+                )
+            body = {
+                "AdGroupId": params.adgroup_id,
+                "ResponsiveAd": {
+                    "Titles": item.titles,
+                    "Texts": item.texts,
+                    "Href": item.href,
+                },
+            }
+            if item.display_url_path:
+                body["ResponsiveAd"]["DisplayUrlPath"] = item.display_url_path
+            if item.sitelink_set_id is not None:
+                body["ResponsiveAd"]["SitelinkSetId"] = item.sitelink_set_id
+            if item.ad_extension_ids:
+                body["ResponsiveAd"]["AdExtensionIds"] = list(item.ad_extension_ids)
+            bodies.append(body)
+            preview_lines.append(
+                _ad_preview(
+                    item,
+                    f"RESPONSIVE_AD «{item.titles[0]}» (+{len(item.titles) - 1})",
+                    f"«{item.texts[0]}»"
+                    + (f" (+{len(item.texts) - 1})" if len(item.texts) > 1 else ""),
+                )
+                + f" [{_create_counters(item, 'RESPONSIVE_AD')}]"
+            )
+    return {
+        "before": None,
+        "requests": [
+            (
+                "ads",
+                "add",
+                {"Ads": bodies},
+                "v501" if params.ad_type == "RESPONSIVE_AD" else "v5",
+            )
+        ],
+        "preview": f"Будет создано объявлений: {len(bodies)}:\n"
+        + "\n".join(f"- {line}" for line in preview_lines),
+        "warnings": warnings,
+    }
+
+
+async def _verify_ads_created(ctx: Ctx, entry: AccountEntry, plan) -> dict:
+    last = getattr(plan, "last_response", None) or {}
+    created = [
+        r.get("Id")
+        for r in (last.get("response") or {}).get("AddResults", [])
+        if r.get("Id") is not None
+    ]
+    if not created:
+        return {"after": None, "ok": False, "note": "read-back: объявления не созданы."}
+    client = ctx.direct()
+    try:
+        found = await client.get_all(
+            "ads",
+            dict({"SelectionCriteria": {"Ids": created}}, **_ADS_GET_BODY),
+            entry.login,
+            "Ads",
+        )
+    finally:
+        await client.aclose()
+    have: dict = {}
+    display_empty = []
+    for item in found:
+        aid = int(item["Id"]) if item.get("Id") is not None else None
+        if aid is None:
+            continue
+        sub = item.get("TextAd") or item.get("ResponsiveAd") or {}
+        display = sub.get("DisplayUrlPath") or ""
+        have[aid] = {"type": item.get("Type"), "display": display, **_bind_before(sub)}
+        if not display.strip():
+            display_empty.append(str(aid))
+    missing = [c for c in created if c not in have]
+    if missing:
+        return {
+            "after": have,
+            "ok": False,
+            "note": "read-back НЕ подтвердил id: " + ", ".join(map(str, missing)),
+        }
+    bad: list[str] = []
+    text_bad: list[str] = []
+    wanted = _create_wanted(plan.params or {})
+    # v1.1.35: при создании DisplayUrlPath обязателен — сверяем явно.
+    want_displays = _create_wanted_displays(plan.params or {})
+    # v1.1.17: сопоставление по индексу корректно только когда создано всё
+    # запрошенное; при частичном ответе строки не совпадают с wanted.
+    aligned = len(created) == len(wanted)
+    if aligned:
+        items = plan.params.get("text_ads") or []
+        if plan.params.get("ad_type") != "TEXT_AD":
+            items = plan.params.get("responsive_ads") or []
+        by_id = {int(i["Id"]): i for i in found if i.get("Id") is not None}
+        for index, aid in enumerate(created):
+            want = wanted[index]
+            for f, value in want.items():
+                if have[aid].get(f) != value:
+                    bad.append(f"{aid}.{f}: {have[aid].get(f)!r} != {value!r}")
+            want_display = want_displays[index]
+            if have[aid].get("display") != want_display:
+                bad.append(
+                    f"{aid}.DisplayUrlPath: {have[aid].get('display')!r} "
+                    f"!= {want_display!r}")
+            if index < len(items):
+                raw = by_id.get(aid, {})
+                sub = {"TextAd": raw.get("TextAd"),
+                       "ResponsiveAd": raw.get("ResponsiveAd")}
+                text_bad.extend(_create_text_mismatches(
+                    aid, str(plan.params.get("ad_type")), items[index], sub))
+    if bad:
+        return {
+            "after": have,
+            "ok": False,
+            "note": "read-back НЕ подтвердил привязку: " + "; ".join(bad),
+        }
+    if text_bad:
+        return {
+            "after": have,
+            "ok": False,
+            "note": "read-back НЕ подтвердил поля: " + "; ".join(text_bad),
+        }
+    by_type: dict[str, int] = {}
+    for aid in created:
+        ad_type = str(have[aid]["type"])
+        by_type[ad_type] = by_type.get(ad_type, 0) + 1
+    typed = ", ".join(f"{t}: {n}" for t, n in sorted(by_type.items()))
+    note = f"подтверждено read-back: создано {len(created)} ({typed})."
+    if not aligned:
+        note += (
+            f" Привязка не сверялась: запрошено {len(wanted)}, создано {len(created)}"
+            " — строки ответа не совпадают с запросом."
+        )
+    if display_empty:
+        # v1.1.35: DisplayUrlPath обязателен — пустой read-back не подтверждаем.
+        return {
+            "after": have,
+            "ok": False,
+            "note": "read-back НЕ подтвердил: пустая отображаемая ссылка у "
+            + ", ".join(display_empty),
+        }
+    return {"after": have, "ok": True, "note": note}
+
+
+write_action(
+    "ads_create",
+    "Создание объявлений TEXT_AD и RESPONSIVE_AD",
+    ("создать объявление", "ads", "add", "новое объявление"),
+    AdsCreateParams,
+    prepare=_prepare_ads_create,
+    apply=lambda ctx, entry, plan: _apply_ads_batch(
+        ctx,
+        entry,
+        plan,
+        "AddResults",
+        [str(i + 1) for i in range(len(plan.requests[0][2]["Ads"]))],
+    ),
+    verify=_verify_ads_created,
+)
+
+
+async def _apply_ads_batch(
+    ctx: Ctx, entry: AccountEntry, plan, result_key: str, labels: list[str]
+) -> dict:
+    from directai_mcp.api.errors import DirectError, DirectUnverifiedError
+
+    service, method, body, version = split_request(plan.requests[0])
+    client = ctx.direct()
+    try:
+        try:
+            result = await client.call(service, method, body, entry.login, version)
+        except DirectUnverifiedError:
+            raise
+        except DirectError as e:
+            return {
+                "status": "failed",
+                "lines": [f"Ошибка API: {e.human_message()}"],
+                "response": {"error": e.human_message()},
+            }
+        from directai_mcp.catalog.common import summarize as _summarize
+
+        lines, ok = _summarize(labels, result.get(result_key, []))
+        total = len(labels)
+        status = "applied" if ok == total else "failed" if ok == 0 else "partial"
+        return {"status": status, "lines": lines, "response": result}
+    finally:
+        await client.aclose()
+
+
+async def _prepare_ads_state(ctx: Ctx, entry: AccountEntry, params: BaseModel) -> dict:
+    assert isinstance(params, AdsStateParams)
+    client = ctx.direct()
+    try:
+        items = await client.get_all(
+            "ads",
+            {
+                "SelectionCriteria": {"Ids": params.ad_ids},
+                "FieldNames": ["Id", "State", "Status"],
+            },
+            entry.login,
+            "Ads",
+        )
+    finally:
+        await client.aclose()
+    found = {int(i["Id"]): i for i in items if i.get("Id") is not None}
+    missing = [a for a in params.ad_ids if a not in found]
+    if missing:
+        raise ValueError(f"объявления не найдены: {missing}.")
+    expected = _ADS_EXPECTED[params.operation]
+    before = {aid: found[aid].get("State") for aid in params.ad_ids}
+    lines = [f"{aid}: {before[aid]} → {expected}" for aid in params.ad_ids]
+    return {
+        "before": before,
+        "requests": [
+            ("ads", params.operation, {"SelectionCriteria": {"Ids": params.ad_ids}})
+        ],
+        "preview": "Будет выполнено:\n" + "\n".join(f"- {line}" for line in lines),
+        "warnings": [],
+    }
+
+
+async def _verify_ads_state(ctx: Ctx, entry: AccountEntry, plan) -> dict:
+    params = plan.params
+    assert isinstance(params, dict)
+    expected = _ADS_EXPECTED[params["operation"]]
+    client = ctx.direct()
+    try:
+        items = await client.get_all(
+            "ads",
+            {
+                "SelectionCriteria": {"Ids": params["ad_ids"]},
+                "FieldNames": ["Id", "State"],
+            },
+            entry.login,
+            "Ads",
+        )
+    finally:
+        await client.aclose()
+    after = {int(i["Id"]): i.get("State") for i in items if i.get("Id") is not None}
+    bad = [
+        f"{aid}: {after.get(aid)} != {expected}"
+        for aid in params["ad_ids"]
+        if after.get(aid) != expected
+    ]
+    if bad:
+        return {
+            "after": after,
+            "ok": False,
+            "note": "read-back НЕ подтвердил: " + "; ".join(bad),
+        }
+    return {"after": after, "ok": True, "note": "подтверждено read-back."}
+
+
+write_action(
+    "ads_state",
+    "Состояние объявлений (moderate запрещён guard)",
+    ("остановить объявление", "ads", "suspend", "moderate", "архив объявления"),
+    AdsStateParams,
+    prepare=_prepare_ads_state,
+    apply=lambda ctx, entry, plan: _apply_ads_batch(
+        ctx,
+        entry,
+        plan,
+        {
+            "suspend": "SuspendResults",
+            "resume": "ResumeResults",
+            "archive": "ArchiveResults",
+            "moderate": "ModerateResults",
+        }[plan.params["operation"]],
+        [str(a) for a in plan.params["ad_ids"]],
+    ),
+    verify=_verify_ads_state,
+)

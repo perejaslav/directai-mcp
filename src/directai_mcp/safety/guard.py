@@ -1,0 +1,439 @@
+"""Test-campaign guard for variant B (DECISIONS step 4).
+
+With the guard on, writes are allowed only inside campaigns named
+'[TEST DirectAI]*'. Verified against live campaign names via read, never
+against request params. Unknown write actions are denied by default.
+Every block carries GUARD_NOTICE: it is protection, not an error.
+"""
+
+from __future__ import annotations
+
+import os
+
+from directai_mcp.api.direct import DirectClient
+from directai_mcp.catalog.registry import Ctx
+
+TEST_PREFIX = "[TEST DirectAI]"
+
+# v1.1.34: бюджеты запрещены везде, включая [TEST DirectAI].
+# Текст блокировки — по ТЗ дословно.
+BUDGET_BLOCK = "Изменение бюджета запрещено политикой."
+
+# Бюджетные ключи параметров (нормализация: нижний регистр без подчеркиваний).
+# Смена стратегии — тоже бюджетная операция (п.1 ТЗ): ключ strategy входит сюда.
+_BUDGET_KEYS = frozenset({
+    "dailybudget",
+    "weeklyspendlimit",
+    "weeklybudget",
+    "budgettype",
+    "strategy",
+})
+
+# v1.1.16: к каждой блокировке guard дописывается пояснение для агента-клиента.
+# Блокировка — это защита, а не сбой: обход не предлагаем, конфиг guard не ищем.
+GUARD_NOTICE = (
+    "Это защита, а не ошибка. Не предлагайте обход и не ищите конфиг guard: "
+    "снятие ограничения — только решением владельца вручную."
+)
+
+
+class GuardBlocked(Exception):
+    """Blocking guard violation; plan_write must not create a plan."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(f"{message} {GUARD_NOTICE}")
+
+
+def guard_active(ctx: Ctx) -> bool:
+    return bool(ctx.settings.guard) or os.environ.get("DIRECTAI_TEST_GUARD") == "1"
+
+
+async def _campaigns_by_id(
+    client: DirectClient, login: str, ids: list[int]
+) -> dict[int, dict]:
+    if not ids:
+        return {}
+    items = await client.get_all(
+        "campaigns",
+        {"SelectionCriteria": {"Ids": ids}, "FieldNames": ["Id", "Name"]},
+        login,
+        "Campaigns",
+    )
+    return {int(i["Id"]): i for i in items if i.get("Id") is not None}
+
+
+async def _campaign_name(
+    client: DirectClient, login: str, campaign_id: int
+) -> str | None:
+    found = await _campaigns_by_id(client, login, [campaign_id])
+    item = found.get(int(campaign_id))
+    return str(item["Name"]) if item and item.get("Name") else None
+
+
+def _is_test(name: str | None) -> bool:
+    return bool(name) and name.startswith(TEST_PREFIX)  # type: ignore[arg-type]
+
+
+async def require_test_campaign(
+    ctx: Ctx, client: DirectClient, login: str, campaign_id: int
+) -> None:
+    name = await _campaign_name(client, login, campaign_id)
+    if name is None:
+        raise GuardBlocked(f"кампания {campaign_id} не найдена в {login}.")
+    if not _is_test(name):
+        raise GuardBlocked(
+            f"запись в кампанию {campaign_id} («{name}») запрещена: вне тестового префикса."
+        )
+
+
+async def _group_campaign(
+    client: DirectClient, login: str, adgroup_id: int
+) -> int | None:
+    items = await client.get_all(
+        "adgroups",
+        {
+            "SelectionCriteria": {"Ids": [adgroup_id]},
+            "FieldNames": ["Id", "CampaignId"],
+        },
+        login,
+        "AdGroups",
+    )
+    return items[0].get("CampaignId") if items else None
+
+
+async def _keyword_group(
+    client: DirectClient, login: str, keyword_id: int
+) -> int | None:
+    items = await client.get_all(
+        "keywords",
+        {"SelectionCriteria": {"Ids": [keyword_id]}, "FieldNames": ["Id", "AdGroupId"]},
+        login,
+        "Keywords",
+    )
+    return items[0].get("AdGroupId") if items else None
+
+
+async def _ad_group(client: DirectClient, login: str, ad_id: int) -> int | None:
+    items = await client.get_all(
+        "ads",
+        {"SelectionCriteria": {"Ids": [ad_id]}, "FieldNames": ["Id", "AdGroupId"]},
+        login,
+        "Ads",
+    )
+    return items[0].get("AdGroupId") if items else None
+
+
+async def _require_group(
+    ctx: Ctx, client: DirectClient, login: str, adgroup_id: int
+) -> None:
+    campaign_id = await _group_campaign(client, login, adgroup_id)
+    if campaign_id is None:
+        raise GuardBlocked(f"группа {adgroup_id} не найдена в {login}.")
+    await require_test_campaign(ctx, client, login, int(campaign_id))
+
+
+async def _require_keyword(
+    ctx: Ctx, client: DirectClient, login: str, keyword_id: int
+) -> None:
+    group_id = await _keyword_group(client, login, keyword_id)
+    if group_id is None:
+        raise GuardBlocked(f"фраза {keyword_id} не найдена в {login}.")
+    await _require_group(ctx, client, login, int(group_id))
+
+
+async def _require_ad(ctx: Ctx, client: DirectClient, login: str, ad_id: int) -> None:
+    group_id = await _ad_group(client, login, ad_id)
+    if group_id is None:
+        raise GuardBlocked(f"объявление {ad_id} не найдено в {login}.")
+    await _require_group(ctx, client, login, int(group_id))
+
+
+async def _referencing_campaigns(
+    client: DirectClient, login: str, service: str, criteria: dict, items_key: str
+) -> set[int]:
+    """Campaign ids owning objects that reference a shared object."""
+    found = await client.get_all(
+        service, {"SelectionCriteria": criteria}, login, items_key
+    )
+    out: set[int] = set()
+    for item in found:
+        for key in ("CampaignId",):
+            if item.get(key) is not None:
+                out.add(int(item[key]))
+        group_id = item.get("AdGroupId")
+        if group_id is not None:
+            campaign_id = await _group_campaign(client, login, int(group_id))
+            if campaign_id is not None:
+                out.add(int(campaign_id))
+    return out
+
+
+async def require_shared_exclusive(
+    ctx: Ctx, client: DirectClient, login: str, kind: str, ref_id: object
+) -> None:
+    """Shared objects: existing ones usable only if test-campaign exclusive."""
+    if kind == "shared_set":
+        owned = await _shared_set_users(client, login, ref_id)
+    elif kind == "sitelink_set":
+        owned = await _referencing_campaigns(
+            client, login, "ads", {"SitelinkSetIds": [ref_id]}, "Ads"
+        )
+    elif kind == "extension":
+        owned = await _referencing_campaigns(
+            client, login, "ads", {"AdExtensionIds": [ref_id]}, "Ads"
+        )
+    elif kind == "image":
+        owned = await _referencing_campaigns(
+            client, login, "ads", {"AdImageHashes": [ref_id]}, "Ads"
+        )
+    elif kind == "retargeting_list":
+        owned = await _referencing_campaigns(
+            client,
+            login,
+            "audiencetargets",
+            {"RetargetingListIds": [ref_id]},
+            "AudienceTargets",
+        )
+    else:
+        raise GuardBlocked(f"неизвестный общий объект {kind}.")
+    if not owned:
+        return
+    names = await _campaigns_by_id(client, login, sorted(owned))
+    foreign = [
+        f"{cid} («{names[cid].get('Name')}»)"
+        for cid in sorted(owned)
+        if not _is_test(names.get(cid, {}).get("Name"))
+    ]
+    if foreign:
+        raise GuardBlocked(
+            f"объект {kind} {ref_id} используется вне тестовой кампании: "
+            + ", ".join(foreign)
+            + "."
+        )
+
+
+async def _shared_set_users(
+    client: DirectClient, login: str, ref_id: object
+) -> set[int]:
+    """Campaigns whose campaign/groups reference a shared negatives set."""
+    owned: set[int] = set()
+    campaigns = await client.get_all(
+        "campaigns",
+        {
+            "SelectionCriteria": {},
+            "FieldNames": ["Id"],
+            "TextCampaignFieldNames": ["NegativeKeywordSharedSetIds"],
+            "UnifiedCampaignFieldNames": ["NegativeKeywordSharedSetIds"],
+        },
+        login,
+        "Campaigns",
+    )
+    for camp in campaigns:
+        for key in ("TextCampaign", "UnifiedCampaign"):
+            ids = (camp.get(key) or {}).get("NegativeKeywordSharedSetIds") or {}
+            items = ids.get("Items") if isinstance(ids, dict) else ids
+            if isinstance(items, list) and ref_id in items:
+                owned.add(int(camp["Id"]))
+    groups = await client.get_all(
+        "adgroups",
+        {
+            "SelectionCriteria": {},
+            "FieldNames": ["Id", "CampaignId", "NegativeKeywordSharedSetIds"],
+        },
+        login,
+        "AdGroups",
+    )
+    for group in groups:
+        ids = group.get("NegativeKeywordSharedSetIds") or {}
+        items = ids.get("Items") if isinstance(ids, dict) else ids
+        if isinstance(items, list) and ref_id in items:
+            owned.add(int(group["CampaignId"]))
+    return owned
+
+
+def _norm_key(key: str) -> str:
+    return str(key).lower().replace("_", "")
+
+
+def is_budget_write(action: str, params: dict) -> bool:
+    """Бюджетная запись: блокируется везде, включая [TEST DirectAI]."""
+    if not isinstance(params, dict):
+        return False
+    for key, value in params.items():
+        # None/пустые значения (дефолты модели) — не запись.
+        if value is None or value == {} or value == []:
+            continue
+        if _norm_key(key) in _BUDGET_KEYS:
+            return True
+    return False
+
+
+def combat_allowed(action: str, params: dict) -> bool:
+    """Операция разрешена в боевой кампании (с планом и read-back).
+
+    TEST-only (False): replace-режимы, пауза кампаний/объявлений, удаления,
+    всё не из списка п.2 ТЗ v1.1.34. Бюджеты тут не проверяются —
+    они заблокированы везде через is_budget_write.
+    """
+    if not isinstance(params, dict):
+        return False
+    if action in ("keywords_add", "keywords_state", "ads_create", "ads_update",
+                  "extensions_create", "bids_set"):
+        return True
+    if action == "bid_modifiers_set":
+        return not params.get("delete_ids")
+    if action == "negatives_set":
+        return params.get("mode", "add") == "add" \
+            and not params.get("update_shared_set")
+    if action == "campaigns_update":
+        return params.get("excluded_sites") is not None \
+            and params.get("end_date") is None \
+            and params.get("negatives") is None \
+            and params.get("strategy") is None
+    if action == "adgroups_update":
+        groups = params.get("groups") or []
+        if not groups:
+            return False
+        # v1.1.36: add/remove регионов — в боевой; replace и остальное — TEST.
+        return all(
+            isinstance(g, dict)
+            and g.get("regions") is not None
+            and g.get("regions_mode", "replace") in ("add", "remove")
+            and g.get("region_ids") is None
+            and g.get("name") is None
+            and g.get("negatives") is None
+            and g.get("tracking_params") is None
+            for g in groups
+        )
+    return False
+
+
+def precheck(action: str, params: dict) -> str | None:
+    """Read-free guard rules, applied before registry lookup.
+
+    Covers future write actions (step 5+) so bypasses block in plan_write
+    even before the action is registered.
+    """
+    if action == "campaigns_update" and params.get("name") is not None:
+        return "переименование существующей кампании запрещено при защите."
+    if action == "ads_state" and params.get("operation") == "moderate":
+        return "модерация запрещена в режиме защиты."
+    if is_budget_write(action, params):
+        # v1.1.34: бюджеты запрещены везде, до обращения к API.
+        # Ловит и удалённый daily_budget (сырые параметры, до валидации).
+        return BUDGET_BLOCK
+    return None
+
+
+def _gids(params: dict) -> list[int]:
+    """adgroup_ids list or single adgroup_id."""
+    if params.get("adgroup_ids"):
+        return [int(g) for g in params["adgroup_ids"]]
+    if params.get("adgroup_id") is not None:
+        return [int(params["adgroup_id"])]
+    return []
+
+
+async def check_write(
+    ctx: Ctx, client: DirectClient, login: str, action: str, params: dict
+) -> None:
+    """Gate every write in guard mode; raises GuardBlocked. No-op outside."""
+    if not guard_active(ctx):
+        return
+    # v1.1.34: бюджеты — жёсткий запрет везде, включая [TEST DirectAI].
+    if is_budget_write(action, params):
+        raise GuardBlocked(BUDGET_BLOCK)
+    if action == "campaigns_create":
+        name = params.get("name", "")
+        if not (isinstance(name, str) and name.startswith(TEST_PREFIX)):
+            raise GuardBlocked("создание кампании без тестового префикса запрещено.")
+        return
+    if action == "campaigns_update":
+        if params.get("name") is not None:
+            raise GuardBlocked(
+                "переименование существующей кампании запрещено при защите."
+            )
+        # v1.1.34: ExcludedSites add — можно в боевой; остальное — только TEST.
+        if combat_allowed(action, params):
+            return
+        for cid in params.get("campaign_ids", []):
+            await require_test_campaign(ctx, client, login, int(cid))
+        return
+    if action == "campaigns_state":
+        for cid in params.get("campaign_ids", []):
+            await require_test_campaign(ctx, client, login, int(cid))
+        return
+    if action in ("adgroups_create",):
+        for cid in params.get("campaign_ids", []):
+            await require_test_campaign(ctx, client, login, int(cid))
+        return
+    if action in ("adgroups_update",):
+        # v1.1.34: смена только регионов — можно в боевой.
+        if combat_allowed(action, params):
+            return
+        for gid in _gids(params):
+            await _require_group(ctx, client, login, gid)
+        return
+    if action in ("ads_create",):
+        # v1.1.34: создание объявлений — можно в боевой.
+        return
+    if action in ("ads_update",):
+        # v1.1.34: тексты/DisplayUrlPath/привязки — можно в боевой.
+        return
+    if action == "ads_state":
+        if params.get("operation") == "moderate":
+            raise GuardBlocked("модерация запрещена в режиме защиты.")
+        for aid in params.get("ad_ids", []):
+            await _require_ad(ctx, client, login, int(aid))
+        return
+    if action in ("keywords_add",):
+        # v1.1.34: добавление фраз — можно в боевой.
+        return
+    if action in ("keywords_update", "keywords_state"):
+        # v1.1.34: пауза/запуск фраз — можно в боевой; правка текста — TEST.
+        if combat_allowed(action, params):
+            return
+        for kid in params.get("keyword_ids", []):
+            await _require_keyword(ctx, client, login, int(kid))
+        return
+    if action == "negatives_set":
+        # v1.1.34: add — можно в боевой; replace/наборы — только TEST.
+        if combat_allowed(action, params):
+            return
+        for cid in params.get("campaign_ids", []):
+            await require_test_campaign(ctx, client, login, int(cid))
+        for gid in _gids(params):
+            await _require_group(ctx, client, login, gid)
+        shared: list = []
+        update_shared = params.get("update_shared_set") or {}
+        if update_shared.get("id") is not None:
+            shared.append(update_shared["id"])
+        for sid in shared:
+            await require_shared_exclusive(ctx, client, login, "shared_set", sid)
+        return
+    if action == "extensions_create":
+        for sid in params.get("sitelink_set_ids", []):
+            await require_shared_exclusive(ctx, client, login, "sitelink_set", sid)
+        for eid in params.get("extension_ids", []):
+            await require_shared_exclusive(ctx, client, login, "extension", eid)
+        for ref in params.get("image_hashes", []):
+            await require_shared_exclusive(ctx, client, login, "image", ref)
+        for lid in params.get("retargeting_list_ids", []):
+            await require_shared_exclusive(ctx, client, login, "retargeting_list", lid)
+        return
+    if action == "bids_set":
+        # v1.1.34: ставки фраз — можно в боевой.
+        return
+    if action == "bid_modifiers_set":
+        # v1.1.34: add/set корректировок — можно в боевой; delete — TEST.
+        # Delete-путь дополнительно проверяется в prepare (_own_modifier).
+        if combat_allowed(action, params):
+            return
+        for cid in params.get("campaign_ids", []):
+            await require_test_campaign(ctx, client, login, int(cid))
+        for gid in params.get("adgroup_ids", []):
+            await _require_group(ctx, client, login, int(gid))
+        return
+    if action == "offline_conversions_upload":
+        return
+    raise GuardBlocked(f"действие {action} недоступно в режиме защиты.")

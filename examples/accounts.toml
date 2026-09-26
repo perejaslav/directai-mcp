@@ -1,0 +1,36 @@
+[auth]
+login = "agency-login"          # token owner; key in keyring; managing account
+
+[defaults]
+include_vat = true             # reports with VAT
+max_rows = 50                  # default table rows
+# goals = []
+attribution = ["AUTO"]
+units_warn_pct = 10            # остаток баллов ниже % лимита → предупреждение
+
+# Шаг 1.1-2: all = auth_login + кеш accounts_discover − exclude.
+[accounts]
+exclude = []                   # логины, никогда не входящие в account="all"
+
+# Короткие имена/роли (необязательно). Старые секции [accounts.*] трактуются
+# так же, с предупреждением в лог.
+[aliases.msk]
+login = "agency-login"
+role = "Поиск, Москва и МО"
+
+[aliases.regions]
+login = "client-e"
+role = "Поиск, регионы"
+
+[aliases.rsya]
+login = "client-c"
+role = "РСЯ, регионы"
+
+[metrika]
+# counter_id = 0               # fill on step 7
+
+[paths]
+# reports_dir = "C:/src/directai-mcp/reports"  # по умолчанию reports/ репозитория
+
+[guard]
+guard = true                   # test-campaign write protection (steps 4-6)

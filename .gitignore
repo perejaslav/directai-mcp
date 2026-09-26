@@ -1,0 +1,21 @@
+# .gitignore: secrets and user data never enter the repo.
+.venv/
+__pycache__/
+*.pyc
+.env
+*.sqlite
+*.sqlite-journal
+logs/
+exports/
+reports/
+.directai/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+/accounts.toml
+/goals.toml
+*.zip
+direct-ai-local.zip
+local.zip
