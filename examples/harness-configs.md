@@ -3,7 +3,7 @@
 Сначала один раз установить команду в систему:
 
 ```powershell
-cd C:\src\directai-mcp
+cd $env:USERPROFILE\directai-mcp
 uv tool install --editable .
 directai-mcp check
 ```
@@ -71,6 +71,6 @@ args = []
 1. `Покажи расходы по всем аккаунтам за последние 7 дней`
    (ожидание: `stats_summary`, `account=all`, `period=LAST_7_DAYS`,
    итоги сверяются с веб-интерфейсом Директа).
-2. `Покажи поисковые запросы по кампаниям msk за неделю и сохрани в CSV`
+2. `Покажи поисковые запросы по главной кампании за неделю и сохрани в CSV`
    (ожидание: `stats_search_queries`, таблица + путь к CSV,
    файл открывается в Excel с разделителем `;`).

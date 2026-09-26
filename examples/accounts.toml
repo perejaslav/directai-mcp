@@ -8,7 +8,7 @@ max_rows = 50                  # default table rows
 attribution = ["AUTO"]
 units_warn_pct = 10            # остаток баллов ниже % лимита → предупреждение
 
-# Шаг 1.1-2: all = auth_login + кеш accounts_discover − exclude.
+# all = auth_login + кеш accounts_discover − exclude.
 [accounts]
 exclude = []                   # логины, никогда не входящие в account="all"
 
@@ -27,10 +27,10 @@ login = "client-c"
 role = "РСЯ, регионы"
 
 [metrika]
-# counter_id = 0               # fill on step 7
+# counter_id = 0
 
 [paths]
-# reports_dir = "C:/src/directai-mcp/reports"  # по умолчанию reports/ репозитория
+reports_dir = "~/.directai/reports"
 
 [guard]
-guard = true                   # test-campaign write protection (steps 4-6)
+guard = true                   # test-campaign write protection

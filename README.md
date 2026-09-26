@@ -7,13 +7,13 @@
 
 ## 1. Установка с нуля
 
-Нужно: Windows 11, Python 3.12+ (с python.org), `uv` (установщик — на сайте
-Astral, docs.astral.sh/uv), `git`,
-токен Яндекс Директа (выдаёт владелец).
+Нужно: Windows 11, `uv`, `git` (оба ставятся через `winget`, см. §1.1),
+токен Яндекс Директа (как получить — см. §1.1, нужен доступ к API).
 
 ```powershell
-git clone https://github.com/perejaslav/directai-mcp.git C:\src\directai-mcp
-cd C:\src\directai-mcp
+cd $env:USERPROFILE
+git clone https://github.com/perejaslav/directai-mcp.git directai-mcp
+cd $env:USERPROFILE\directai-mcp
 uv tool install --editable .
 directai-mcp init
 directai-mcp set-token
@@ -39,8 +39,9 @@ directai-mcp check
 запись только через план с подтверждением; токен только в Credential Manager.
 1. Спроси разрешение и поставь git и uv (флаги снимают лишние вопросы):
 winget install --id Git.Git -e --accept-package-agreements --accept-source-agreements
-winget install --id Astral.UV -e --accept-package-agreements --accept-source-agreements
-Проверь: git --version и uv --version. Нет команды — закрой и открой терминал.
+winget install --id astral-sh.uv -e --accept-package-agreements --accept-source-agreements
+Проверь: git --version и uv --version. Нет команды — обнови PATH в этой сессии:
+$env:Path = [Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [Environment]::GetEnvironmentVariable("Path","User")
 Нет winget — поставь App Installer из Microsoft Store.
 2. Склонируй репозиторий (три команды, по одной):
 cd $env:USERPROFILE
@@ -48,11 +49,20 @@ git clone https://github.com/perejaslav/directai-mcp.git directai-mcp
 cd $env:USERPROFILE\directai-mcp
 3. Установи и инициализируй (по одной команде):
 uv tool install --editable .
+uv tool update-shell
+$env:Path = [Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [Environment]::GetEnvironmentVariable("Path","User")
+directai-mcp --version
 directai-mcp init
 Первая установка качает Python несколько минут — это не зависание.
-4. Токен. Объясни: создай приложение на https://oauth.yandex.ru/client/new
-с правами direct:api и metrika:read. Затем открой в браузере ссылку
-https://oauth.yandex.ru/authorize?response_type=token&client_id=ID_ПРИЛОЖЕНИЯ
+4. Спроси логины кабинетов (это не секрет): главный — владелец будущего токена.
+Если кабинетов несколько (агентство: главный логин видит клиентские) —
+попроси все. ПОЛНОСТЬЮ замени демо-алиасы в %USERPROFILE%\.directai\accounts.toml:
+[auth] login — реальный главный логин, под каждый логин свой [aliases.*].
+goals.toml необязателен: названия целей Метрики, можно заполнить позже.
+5. Токен. Объясни: создай приложение типа «Для доступа к API или отладки»
+на https://oauth.yandex.ru/client/new с правами direct:api и metrika:read.
+Redirect URI настраивать не нужно — он фиксирован. Затем открой в браузере ссылку
+https://oauth.yandex.ru/authorize?response_type=token&client_id=ID_ПРИЛОЖЕНИЯ&redirect_uri=https://oauth.yandex.ru/verification_code
 (подставь ID со страницы приложения) и нажми «Разрешить» — токен появится
 в адресной строке. Это штатный способ из доки:
 https://yandex.ru/dev/direct/doc/ru/concepts/auth-token. Затем подай заявку
@@ -60,17 +70,12 @@ https://yandex.ru/dev/direct/doc/ru/concepts/auth-token. Затем подай �
 инструкция: https://yandex.ru/dev/direct/doc/ru/concepts/register.
 Одобрение занимает до нескольких дней — ошибка 58 до этого норма, просто ждём.
 Без metrika:read типы ценностей берутся из goals.toml (по умолчанию условные).
-5. Токен в чат писать ЗАПРЕЩЕНО. Пусть человек САМ выполнит в своём терминале:
+6. Токен в чат писать ЗАПРЕЩЕНО. Пусть человек САМ выполнит в своём терминале:
 directai-mcp set-token — и введёт токен в скрытое поле. Символы не отображаются —
 это нормально: вставить и Enter. Если вставил в чат — останови, попроси
 отозвать токен в Яндекс ID и выпустить новый.
-6. Спроси логины кабинетов (это не секрет): главный — владелец токена.
-Если кабинетов несколько (агентство: главный логин видит клиентские) —
-попроси все. Сам впиши их в %USERPROFILE%\.directai\accounts.toml:
-[auth] login — главный, под каждый логин свой [aliases.*].
-goals.toml необязателен: названия целей Метрики, можно заполнить позже.
 7. Проверь: directai-mcp check. Расшифруй итог: OK — работает; 53 — неверный
-токен, повторить шаг 5; 58 — нет доступа к API, вернуться к шагу 4; 513 —
+токен, повторить шаг 6; 58 — нет доступа к API, вернуться к шагу 5; 513 —
 у логина нет аккаунта в Директе (создай кампанию в интерфейсе); 152 —
 кончились баллы API, подождать до завтра. Коды:
 https://yandex.ru/dev/direct/doc/ref-v5/concepts/errors-list.html
@@ -121,9 +126,9 @@ args = []
 
 | Файл | Что внутри и как править |
 |---|---|
-| `accounts.toml` | Аккаунты (`msk`, `regions`, `rsya`, `spk`, `client-g` → логины и роли), `defaults` (`include_vat`, `max_rows`, `attribution`), секция `[guard]`. Секретов здесь нет. Править любым текстовым редактором, применяется со следующего запроса. |
+| `accounts.toml` | Ваши кабинеты: `[auth] login` — владелец токена, под каждый логин свой `[aliases.*]` (короткое имя и роль). Плюс `defaults` (`include_vat`, `max_rows`, `attribution`) и секция `[guard]`. Секретов здесь нет. Править любым текстовым редактором, применяется со следующего запроса. |
 | `rules.toml` | Правила: обязательный DisplayUrlPath, слова для заголовков, пороги `max_budget_ratio` / `max_bid_ratio` (предупреждения при резких изменениях). |
-| `goals.toml` | `id цели → Название` (Метрика, счётчики 90000004 и 90000012). В отчётах цель видна как «Название (id)», без названия — голый id. Названия вписываете вы. |
+| `goals.toml` | `id цели → Название` (цели Метрики). В отчётах цель видна как «Название (id)», без названия — голый id. Названия вписываете вы. |
 | `journal.sqlite` | Журнал всех записей (не удаляйте). |
 | `exports\` | CSV/MD-выгрузки из отчётов. |
 | `logs\` | Логи сервера. |
@@ -201,9 +206,8 @@ Manager (`directai-mcp`) или переменная `DIRECTAI_TOKEN`.
 
 ## 6. Guard (защита)
 
-Песочница API Директа частично неработоспособна, поэтому тесты записи идут
-в боевых аккаунтах, но опасные операции — строго внутри кампаний
-`[TEST DirectAI]*`. Guard это контролирует: перед каждой записью сверяет
+Опасные операции — строго внутри кампаний `[TEST DirectAI]*`.
+Guard это контролирует: перед каждой записью сверяет
 **живое имя кампании** через API.
 
 Коротко о правилах:
@@ -218,8 +222,7 @@ Manager (`directai-mcp`) или переменная `DIRECTAI_TOKEN`.
 Включён по умолчанию (`[guard] guard=true` в `accounts.toml` плюс дефолт
 в коде). Выключение — **только вашим решением**: поставьте `guard = false`
 (и убедитесь, что нет переменной `DIRECTAI_TEST_GUARD=1`), после тестов
-верните `true`. Первый тест в боевом объекте — только после вашего выбора
-объекта и явного разрешения.
+верните `true`.
 
 ### 6.1 Правило для агентов-клиентов MCP
 
@@ -250,15 +253,16 @@ Manager (`directai-mcp`) или переменная `DIRECTAI_TOKEN`.
 ## 7. Обновление
 
 ```powershell
-cd C:\src\directai-mcp
+cd $env:USERPROFILE\directai-mcp
 git pull
 uv tool install --editable .
 directai-mcp check
 ```
 
 `init` после обновления можно повторить: существующие конфиги не затрутся,
-недостающие (например, новые примеры) докопируются. Харнесы перезапускать
-не нужно (команда та же).
+недостающие (например, новые примеры) докопируются. Перед обновлением
+закройте все окна харнеса, после — откройте заново (сервер подхватывается
+при старте).
 
 ## 8. Типичные ошибки
 
@@ -271,10 +275,8 @@ directai-mcp check
 | Харнес не видит сервер | Полный путь к exe (`uv tool dir`), перезапуск харнеса, логи в `.directai\logs` |
 | План с предупреждениями не применяется | Это защита: повторите `apply_write` с `acknowledge_warnings=true` только после вашего согласия |
 
-## 9. Что отложено (вне v1.0)
+## 9. Что отложено
 
-Вордстат, удалённый HTTP-режим, Яндекс Аудитории, Вебмастер,
-многопользовательский режим, загрузка офлайн-конверсий (их уже грузит
-интеграция Директ ↔ Google Sheets — повторная загрузка задвоила бы
-конверсии). Метрика частично уже внутри: цели подписаны через `goals.toml`,
+Вордстат, удалённый HTTP-режим, многопользовательский режим.
+Метрика частично уже внутри: цели подписаны через `goals.toml`,
 счётчики проверяет `counter_check`.
