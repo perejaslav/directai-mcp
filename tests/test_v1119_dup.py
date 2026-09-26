@@ -78,7 +78,7 @@ async def test_sum_mode_labels_and_dup_note(respx_mock, tmp_path):
     assert "CPA (сумма по целям)" in out
     assert "CR (сумма по целям)" in out
     assert "В строках возможны дубли визитов" in out
-    assert "уникальные конверсии — только в итоге" in out
+    assert "итог — сумма строк" in out
     # site-a: сумма 5, CPA 200.00, CR 50.00%.
     assert "| 1 | site-a | 100 | 10 | 10.00% | 1 100.00 | 66.67% | 110.00 | " \
         "5 | 220.00 | 50.00% |" in out

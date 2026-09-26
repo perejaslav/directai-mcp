@@ -21,7 +21,7 @@ from directai_mcp.catalog.common import (
 )
 from directai_mcp.catalog.registry import ACCOUNT_HELP, Ctx, action
 from directai_mcp.config import AccountEntry
-from directai_mcp.fmt import GOAL_VALUE_NOTE, to_float, totals
+from directai_mcp.fmt import GOAL_VALUE_NOTE, num, to_float, totals, totals_line
 
 GROUP_DATE_FIELD = {"day": "Date", "week": "Week", "month": "Month",
                       # v1.1.24: дня недели в API нет — запрашиваем Date,
@@ -1111,10 +1111,11 @@ def _fmt2(value: Decimal) -> str:
 
 # v1.1.19: режимы конверсий строк (дедуп визитов между целями API не даёт —
 # report-format.md: сумма по целям может превышать число целевых визитов).
+# v1.2.2: итог = Σ строк (уникальные больше не выделяются итогом из агрегата).
 SUM_SUFFIX = " (сумма по целям)"
 DUP_NOTE = (
     "в строках возможны дубли визитов,"
-    " уникальные конверсии — только в итоге"
+    " итог — сумма строк"
 )
 
 
@@ -1820,6 +1821,73 @@ def _key_sums(
     return conv, rev
 
 
+def _population_totals(
+    ctx: Ctx,
+    params: StatsParams,
+    entries: list[AccountEntry],
+    rows: list[dict],
+    goals_by_login: dict[str, list[str]],
+    goals_info: tuple[list[str], str] | None,
+    totals_override: dict[str, Decimal] | None,
+) -> tuple[dict[str, Decimal], str, list[str], bool, bool]:
+    """v1.2.2: общий расчёт итогов key-популяции (_run_report/_run_custom).
+
+    Возвращает (render_totals, totals_label, extra_lines, mixing,
+    model_col). Правило v1.2.1: итог = Σ строк той же популяции; деньги —
+    из беcцелевого агрегата (v1.1.27), конверсии/ценность — Σ key-строк.
+    При mixing проставляет строкам поле 'Модель' (model_col=True).
+    """
+    union_goals = goals_info[0] if goals_info and goals_info[0] else []
+    goalless_logins = {e.login for e in entries if not goals_by_login.get(e.login)}
+    key_rows, bare_rows = _split_key_rows(rows, goalless_logins)
+    mixing = bool(union_goals) and bool(key_rows) and bool(bare_rows)
+    model = ",".join(effective_attribution(ctx, params))
+    totals_label = "Итого"
+    extra_totals_lines: list[str] = []
+    model_col = False
+    if mixing:
+        for r in key_rows:
+            r["Модель"] = model
+        for r in bare_rows:
+            r["Модель"] = "все цели (LC)"
+        model_col = True
+    if union_goals and key_rows:
+        key_t = totals(key_rows)
+        pg = params.primary_goal or None
+        if pg:
+            key_t["Conversions"], key_t["Revenue"] = _key_sums(key_rows, pg)
+        if mixing:
+            render_totals = key_t
+            seen = {r.get(ACCOUNT_COL) for r in key_rows if r.get(ACCOUNT_COL)}
+            keyed_entries = [e.login for e in entries
+                             if goals_by_login.get(e.login)]
+            n_key = len(seen & set(keyed_entries)) or len(keyed_entries)
+            kind = ("key-целям" if (goals_info and goals_info[1].startswith("auto"))
+                    else "целям")
+            totals_label = (f"Итого по {kind} ({model}), {_cabinet(n_key)}")
+            all_money = (totals_override if totals_override is not None
+                         else totals(rows))
+            extra_totals_lines.append(
+                totals_line(all_money, label="Итого (все кабинеты)",
+                            skip_conversions=True))
+        elif totals_override is not None:
+            render_totals = dict(totals_override)
+            render_totals["Conversions"] = key_t["Conversions"]
+            render_totals["Revenue"] = key_t["Revenue"]
+        else:
+            render_totals = key_t
+    else:
+        render_totals = (totals_override if totals_override is not None
+                         else totals(rows))
+    if union_goals and totals_override is not None:
+        lc_conv = totals_override.get("Conversions") or Decimal(0)
+        if lc_conv:
+            extra_totals_lines.append(
+                f"Конверсии (все цели, LC): {num(lc_conv, 0)} "
+                "(другая популяция, не итог).")
+    return render_totals, totals_label, extra_totals_lines, mixing, model_col
+
+
 def _context(
     ctx: Ctx,
     name: str,
@@ -1830,7 +1898,9 @@ def _context(
     goals_by_login: dict[str, list[str]] | None = None,
 ) -> str:
     mark = "[ПЕСОЧНИЦА] " if ctx.sandbox else ""
-    accounts = ", ".join(e.login for e in entries)
+    # v1.2.2: при >5 кабинетах — только счётчик, без перечисления логинов.
+    accounts = (", ".join(e.login for e in entries) if len(entries) <= 5
+                else _cabinet(len(entries)))
     if goals_info is None:
         goals = list(params.goals) or list(ctx.settings.goals)
         source = "explicit" if goals else "none"
@@ -1853,26 +1923,26 @@ def _context(
             keyed = [e.login for e in entries if goals_by_login.get(e.login)]
             bare = [e.login for e in entries if not goals_by_login.get(e.login)]
             if keyed and bare:
-                def _gl(n: int) -> str:
-                    if n % 10 == 1 and n % 100 != 11:
-                        return f"{n} цель"
-                    if 2 <= n % 10 <= 4 and n % 100 not in (12, 13, 14):
-                        return f"{n} цели"
-                    return f"{n} целей"
-                counts = "; ".join(
-                    f"кабинет {login}: {_gl(len(goals_by_login[login]))}"
-                    for login in keyed
-                )
-                counts += "; " + "; ".join(
-                    f"кабинет {login}: без ключевых целей" for login in bare
-                )
                 if len(entries) <= 5:
+                    def _gl(n: int) -> str:
+                        if n % 10 == 1 and n % 100 != 11:
+                            return f"{n} цель"
+                        if 2 <= n % 10 <= 4 and n % 100 not in (12, 13, 14):
+                            return f"{n} цели"
+                        return f"{n} целей"
+                    counts = "; ".join(
+                        f"кабинет {login}: {_gl(len(goals_by_login[login]))}"
+                        for login in keyed
+                    )
+                    counts += "; " + "; ".join(
+                        f"кабинет {login}: без ключевых целей" for login in bare
+                    )
                     mixed = (f" атрибуция: {attribution} (кабинеты: "
                              f"{', '.join(keyed)}); LC без целей (кабинеты: "
                              f"{', '.join(bare)}). {counts}.")
                 else:
-                    mixed = (f" атрибуция: {attribution} ({_cabinet(len(keyed))}); "
-                             f"LC без целей ({_cabinet(len(bare))}). {counts}.")
+                    mixed = (f" атрибуция: {attribution}: {_cabinet(len(keyed))}; "
+                             f"LC без целей: {_cabinet(len(bare))}.")
         text = (
             f"{mark}{name}: {accounts}, {_period_label(params)}, расход {vat}, "
             f"атрибуция: {attribution}, целей: {len(goals)} ({src_label}), "
@@ -2268,54 +2338,13 @@ async def _run_report(
             empty_note += ((" " if empty_note else "") + fill_note)
     # v1.1.9: итоги для долей/топа — из сырых строк ДО производных колонок
     # (иначе totals() посчитал бы Conversions дважды: сырые + вычисленная).
-    # v1.2.1: итог = Σ строк той же популяции целей и модели атрибуции.
-    # Деньги (показы/клики/расход) — из беcцелевого агрегата, если есть
-    # (v1.1.27: гранд-тотал без построчного округления НДС); конверсии
-    # и ценность — всегда Σ строк key-популяции.
-    from directai_mcp.fmt import num as _num
-    from directai_mcp.fmt import totals_line as _totals_line
-
-    union_goals = goals_info[0] if goals_info and goals_info[0] else []
-    goalless_logins = {e.login for e in entries if not goals_by_login.get(e.login)}
-    key_rows, bare_rows = _split_key_rows(rows, goalless_logins)
-    mixing = bool(union_goals) and bool(key_rows) and bool(bare_rows)
-    model = ",".join(effective_attribution(ctx, params))
-    totals_label = "Итого"
-    extra_totals_lines: list[str] = []
-    if union_goals and key_rows:
-        key_t = totals(key_rows)
-        pg = params.primary_goal or None
-        if pg:
-            key_t["Conversions"], key_t["Revenue"] = _key_sums(key_rows, pg)
-        if mixing:
-            render_totals = key_t
-            seen = {r.get(ACCOUNT_COL) for r in key_rows if r.get(ACCOUNT_COL)}
-            keyed_entries = [e.login for e in entries
-                             if goals_by_login.get(e.login)]
-            n_key = len(seen & set(keyed_entries)) or len(keyed_entries)
-            kind = ("key-целям" if (goals_info and goals_info[1].startswith("auto"))
-                    else "целям")
-            totals_label = (f"Итого по {kind} ({model}), {_cabinet(n_key)}")
-            all_money = (totals_override if totals_override is not None
-                         else totals(rows))
-            extra_totals_lines.append(
-                _totals_line(all_money, label="Итого (все кабинеты)",
-                             skip_conversions=True))
-        elif totals_override is not None:
-            render_totals = dict(totals_override)
-            render_totals["Conversions"] = key_t["Conversions"]
-            render_totals["Revenue"] = key_t["Revenue"]
-        else:
-            render_totals = key_t
-    else:
-        render_totals = (totals_override if totals_override is not None
-                         else totals(rows))
-    if union_goals and totals_override is not None:
-        lc_conv = totals_override.get("Conversions") or Decimal(0)
-        if lc_conv:
-            extra_totals_lines.append(
-                f"Конверсии (все цели, LC): {_num(lc_conv, 0)} "
-                "(другая популяция, не итог).")
+    # v1.2.2: общий расчёт key-популяции (без изменения поведения v1.2.1).
+    (render_totals, totals_label, extra_totals_lines, _mixing,
+     model_col) = _population_totals(
+        ctx, params, entries, rows, goals_by_login, goals_info,
+        totals_override)
+    if model_col and "Модель" not in columns:
+        columns.insert(0, "Модель")
     total_cost = render_totals.get("Cost") or Decimal(0)
     top_line: str | None = None
     if (
@@ -2602,52 +2631,13 @@ async def _run_custom(ctx: Ctx, params: CustomParams) -> str:
         rows, n_empty = drop_empty_rows(rows)
         empty_note = _empty_note(n_empty) if n_empty else ""
     # v1.1.9: итоги из сырых строк ДО производных (без двойного счёта).
-    # v1.2.1: итог = Σ строк той же популяции (как в _run_report):
-    # деньги — агрегат без целей, конверсии/ценность — Σ key-строк.
-    from directai_mcp.fmt import num as _cnum
-    from directai_mcp.fmt import totals_line as _ctotals_line
-
-    union_goals = goals_info[0] if goals_info and goals_info[0] else []
-    goalless_logins = {e.login for e in entries if not goals_by_login.get(e.login)}
-    key_rows, bare_rows = _split_key_rows(rows, goalless_logins)
-    mixing = bool(union_goals) and bool(key_rows) and bool(bare_rows)
-    model = ",".join(effective_attribution(ctx, params))
-    totals_label = "Итого"
-    extra_totals_lines: list[str] = []
-    if union_goals and key_rows:
-        key_t = totals(key_rows)
-        pg = params.primary_goal or None
-        if pg:
-            key_t["Conversions"], key_t["Revenue"] = _key_sums(key_rows, pg)
-        if mixing:
-            render_totals = key_t
-            seen = {r.get(ACCOUNT_COL) for r in key_rows if r.get(ACCOUNT_COL)}
-            keyed_entries = [e.login for e in entries
-                             if goals_by_login.get(e.login)]
-            n_key = len(seen & set(keyed_entries)) or len(keyed_entries)
-            kind = ("key-целям" if (goals_info and goals_info[1].startswith("auto"))
-                    else "целям")
-            totals_label = (f"Итого по {kind} ({model}), {_cabinet(n_key)}")
-            all_money = (totals_override if totals_override is not None
-                         else totals(rows))
-            extra_totals_lines.append(
-                _ctotals_line(all_money, label="Итого (все кабинеты)",
-                              skip_conversions=True))
-        elif totals_override is not None:
-            render_totals = dict(totals_override)
-            render_totals["Conversions"] = key_t["Conversions"]
-            render_totals["Revenue"] = key_t["Revenue"]
-        else:
-            render_totals = key_t
-    else:
-        render_totals = (totals_override if totals_override is not None
-                         else totals(rows))
-    if union_goals and totals_override is not None:
-        lc_conv = totals_override.get("Conversions") or Decimal(0)
-        if lc_conv:
-            extra_totals_lines.append(
-                f"Конверсии (все цели, LC): {_cnum(lc_conv, 0)} "
-                "(другая популяция, не итог).")
+    # v1.2.2: общий расчёт key-популяции (как в _run_report).
+    (render_totals, totals_label, extra_totals_lines, _mixing,
+     model_col) = _population_totals(
+        ctx, params, entries, rows, goals_by_login, goals_info,
+        totals_override)
+    if model_col and "Модель" not in columns:
+        columns.insert(0, "Модель")
     total_cost = render_totals.get("Cost") or Decimal(0)
     top_line: str | None = None
     if params.limit and len(rows) > params.limit:
