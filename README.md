@@ -40,10 +40,12 @@ directai-mcp check
 1. Спроси разрешение и поставь git и uv (флаги снимают лишние вопросы):
 winget install --id Git.Git -e --accept-package-agreements --accept-source-agreements
 winget install --id astral-sh.uv -e --accept-package-agreements --accept-source-agreements
-Проверь: git --version и uv --version. Нет команды — обнови PATH в этой сессии:
+Проверь: git --version и uv --version. Нет команды — обнови PATH в этой сессии
+(давай строку одним блоком, проверь, что вставилась одной строкой):
 $env:Path = [Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [Environment]::GetEnvironmentVariable("Path","User")
 Нет winget — поставь App Installer из Microsoft Store.
-2. Склонируй репозиторий (три команды, по одной):
+2. Склонируй репозиторий (три команды, по одной). Папка directai-mcp уже есть —
+не клонируй, а выполни git pull внутри неё:
 cd $env:USERPROFILE
 git clone https://github.com/perejaslav/directai-mcp.git directai-mcp
 cd $env:USERPROFILE\directai-mcp
@@ -64,10 +66,13 @@ goals.toml необязателен: названия целей Метрики,
 Redirect URI настраивать не нужно — он фиксирован. Затем открой в браузере ссылку
 https://oauth.yandex.ru/authorize?response_type=token&client_id=ID_ПРИЛОЖЕНИЯ&redirect_uri=https://oauth.yandex.ru/verification_code
 (подставь ID со страницы приложения) и нажми «Разрешить» — токен появится
-в адресной строке. Это штатный способ из доки:
+в адресной строке. Скопируй ТОЛЬКО значение после access_token= и до &,
+не весь URL (вид: access_token=y0_AgA...&token_type=...). Спроси «что видишь?»:
+ошибка OAuth — проверить ID приложения и пробелы. Это штатный способ из доки:
 https://yandex.ru/dev/direct/doc/ru/concepts/auth-token. Затем подай заявку
 на доступ к API в интерфейсе Директа (Инструменты → API → Мои заявки),
 инструкция: https://yandex.ru/dev/direct/doc/ru/concepts/register.
+В описании заявки укажи «личный учёт статистики и управление своими кампаниями».
 Одобрение занимает до нескольких дней — ошибка 58 до этого норма, просто ждём.
 Без metrika:read типы ценностей берутся из goals.toml (по умолчанию условные).
 6. Токен в чат писать ЗАПРЕЩЕНО. Пусть человек САМ выполнит в своём терминале:
