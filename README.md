@@ -51,8 +51,11 @@ uv tool install --editable .
 directai-mcp init
 Первая установка качает Python несколько минут — это не зависание.
 4. Токен. Объясни: создай приложение на https://oauth.yandex.ru/client/new
-с правами direct:api и metrika:read. Получи обычный токен приложения
-(не отладочный) — кнопка на странице приложения. Затем подай заявку
+с правами direct:api и metrika:read. Затем открой в браузере ссылку
+https://oauth.yandex.ru/authorize?response_type=token&client_id=ID_ПРИЛОЖЕНИЯ
+(подставь ID со страницы приложения) и нажми «Разрешить» — токен появится
+в адресной строке. Это штатный способ из доки:
+https://yandex.ru/dev/direct/doc/ru/concepts/auth-token. Затем подай заявку
 на доступ к API в интерфейсе Директа (Инструменты → API → Мои заявки),
 инструкция: https://yandex.ru/dev/direct/doc/ru/concepts/register.
 Одобрение занимает до нескольких дней — ошибка 58 до этого норма, просто ждём.
