@@ -320,6 +320,9 @@ def finalize(
     value_map: dict[str, dict[str, str]] | None = None,
     # v1.1.29: подпись агрегата Revenue (None — не выводить).
     revenue_label: str | None = "Ценность целей (условная)",
+    # v1.2.1: подпись главной итоговой строки + доп. строки итогов.
+    totals_label: str = "Итого",
+    extra_totals_lines: list[str] | None = None,
 ) -> str:
     """Cap rows at 200, render table, autosave full result on cut or demand.
 
@@ -343,12 +346,15 @@ def finalize(
                 reports, name, account, context, columns, rows, format,
                 single_goal, totals_override, totals_suffix, top_line,
                 header_map, value_map, revenue_label,
+                totals_label, extra_totals_lines,
             )
         summary = render_table(
             context, columns, rows, FILE_SUMMARY_ROWS, money_cols, with_totals,
             single_goal, totals_override, totals_suffix, top_line,
             header_map=header_map, value_map=value_map,
             revenue_label=revenue_label,
+            totals_label=totals_label,
+            extra_totals_lines=extra_totals_lines,
         )
         out = (
             f"Полный результат: {path} ({len(rows)} строк, формат {format}).\n\n"
@@ -369,6 +375,8 @@ def finalize(
             header_map=header_map,
             value_map=value_map,
             revenue_label=revenue_label,
+            totals_label=totals_label,
+            extra_totals_lines=extra_totals_lines,
         )
         out += f"\n\n{truncated_line(len(rows), shown)}"
     if errors:

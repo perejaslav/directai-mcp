@@ -204,7 +204,7 @@ async def test_crm_only_revenue_total_label(respx_mock, tmp_path):
             ctx, ACTIONS["stats_campaigns"].params(
                 account="agency-login", campaign_ids=[7], goals=["9", "8"],
                 attribution=["AUTO"]))
-        assert "Выручка CRM: 3 194 145.20 ₽" in out
+        assert "Выручка CRM: 3 193 145.20 ₽" in out
         assert "Ценность целей (условная)" not in out
     finally:
         COUNTER_GOALS_CACHE.pop(99, None)

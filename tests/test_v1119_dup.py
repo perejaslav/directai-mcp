@@ -82,8 +82,10 @@ async def test_sum_mode_labels_and_dup_note(respx_mock, tmp_path):
     # site-a: сумма 5, CPA 200.00, CR 50.00%.
     assert "| 1 | site-a | 100 | 10 | 10.00% | 1 100.00 | 66.67% | 110.00 | " \
         "5 | 220.00 | 50.00% |" in out
-    # Сумма строк 6 при итоге 5 — честно подписано, итог из агрегата.
-    assert "Конверсии: 5;" in out
+    # Сумма строк 6 = итог (одна популяция); LC-агрегат — отдельной строкой.
+    assert "Конверсии: 6;" in out
+    assert "CPA: 275.00 ₽" in out
+    assert "Конверсии (все цели, LC): 5 (другая популяция, не итог)." in out
 
 
 async def test_primary_goal_no_dup_sum_within_total(respx_mock, tmp_path):
@@ -99,8 +101,10 @@ async def test_primary_goal_no_dup_sum_within_total(respx_mock, tmp_path):
     # site-a: только цель 1 → 3, CPA 333.33, CR 30.00%.
     assert "| 1 | site-a | 100 | 10 | 10.00% | 1 100.00 | 66.67% | 110.00 | " \
         "3 | 366.67 | 30.00% |" in out
-    # Сумма строк 4 не превышает итог 5.
-    assert "Конверсии: 5;" in out
+    # Итог — только цель 1: сумма строк 4, CPA 412.50.
+    assert "Конверсии: 4;" in out
+    assert "CPA: 412.50 ₽" in out
+    assert "Конверсии (все цели, LC): 5 (другая популяция, не итог)." in out
 
 
 async def test_primary_goal_must_be_in_goals(respx_mock, tmp_path):

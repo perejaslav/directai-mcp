@@ -65,11 +65,11 @@ async def test_merge_12_goals_two_chunks(respx_mock, tmp_path):
                                         goals=goals, attribution=["AUTO"],
                                         with_conversions=True))
     assert route.call_count == 3  # 2 чанка + агрегат
-    assert "Конверсии: 12" in out  # итог из агрегата
+    assert "Конверсии: 14" in out  # v1.2.1: итог = Σ строк (10×1 + 2×2)
     assert "дубли визитов" in out
 
 
-async def test_aggregate_totals_win_over_goal_sums(respx_mock, tmp_path):
+async def test_row_sums_win_over_aggregate(respx_mock, tmp_path):
     route = respx_mock.post(RURL).mock(side_effect=[
         _tsv("CampaignId\tConversions_1_AUTO", "7\t10"),
         _tsv("CampaignId\tConversions", "7\t9"),
@@ -80,7 +80,8 @@ async def test_aggregate_totals_win_over_goal_sums(respx_mock, tmp_path):
                                         goals=["1"], attribution=["AUTO"],
                                         with_conversions=True))
     assert route.call_count == 2
-    assert "Конверсии: 9" in out
+    assert "Конверсии: 10" in out  # v1.2.1: итог = Σ строк
+    assert "Конверсии (все цели, LC): 9 (другая популяция, не итог)." in out
     assert "Доход:" not in out
     assert "ДРР" not in out
 

@@ -1758,6 +1758,68 @@ def _revenue_note(
     return ""
 
 
+def _cabinet(n: int) -> str:
+    """v1.2.1: '1 кабинет / 2 кабинета / 5 кабинетов'."""
+    n = int(n)
+    if n % 10 == 1 and n % 100 != 11:
+        return f"{n} кабинет"
+    if 2 <= n % 10 <= 4 and n % 100 not in (12, 13, 14):
+        return f"{n} кабинета"
+    return f"{n} кабинетов"
+
+
+def _split_key_rows(
+    rows: list[dict], goalless_logins: set[str]
+) -> tuple[list[dict], list[dict]]:
+    """v1.2.1: строки key-популяции и беcцельных кабинетов.
+
+    Строка без ACCOUNT_COL или с неизвестным логином — в key-корзину
+    (не теряем показанные данные из итога).
+    """
+    key, goal = [], []
+    for r in rows:
+        (goal if r.get(ACCOUNT_COL) in goalless_logins else key).append(r)
+    return key, goal
+
+
+def _col_matches_goal(col: str, prefix: str, gid: str) -> bool:
+    """v1.2.1: колонка Conversions_/Revenue_ относится к цели gid.
+
+    Сырые (Conversions_9_AUTO) и локализованные (Conversions_Имя (9)_AUTO)
+    имена; голая Conversions/Revenue — False (популяция неопределена).
+    """
+    if col == prefix or not col.startswith(prefix + "_"):
+        return False
+    rest = col[len(prefix) + 1:]
+    return rest == gid or rest.startswith(gid + "_") or f"({gid})" in rest
+
+
+def _key_sums(
+    key_rows: list[dict], primary_gid: str | None
+) -> tuple[Decimal, Decimal]:
+    """v1.2.1: Σ Conversions/Revenue key-строк; при primary — только его цель."""
+    from directai_mcp.fmt import to_decimal as _td
+
+    conv = rev = Decimal(0)
+    for r in key_rows:
+        for k, v in r.items():
+            if k == "Conversions" or k.startswith("Conversions_"):
+                if primary_gid and not _col_matches_goal(k, "Conversions",
+                                                         primary_gid):
+                    continue
+                parsed = _td(v)
+                if parsed is not None:
+                    conv += parsed
+            elif k == "Revenue" or k.startswith("Revenue_"):
+                if primary_gid and not _col_matches_goal(k, "Revenue",
+                                                         primary_gid):
+                    continue
+                parsed = _td(v)
+                if parsed is not None:
+                    rev += parsed
+    return conv, rev
+
+
 def _context(
     ctx: Ctx,
     name: str,
@@ -1765,6 +1827,7 @@ def _context(
     params: StatsParams,
     goals_info: tuple[list[str], str] | None = None,
     value_info: tuple[dict[str, str], str] | None = None,
+    goals_by_login: dict[str, list[str]] | None = None,
 ) -> str:
     mark = "[ПЕСОЧНИЦА] " if ctx.sandbox else ""
     accounts = ", ".join(e.login for e in entries)
@@ -1784,11 +1847,39 @@ def _context(
             src_label = "авто all: PriorityGoals+стратегия+архив+12"
         else:
             src_label = "авто key: PriorityGoals+стратегия"
+        # v1.2.1: смешение популяций — фактическая модель покампанийно.
+        mixed = ""
+        if goals_by_login:
+            keyed = [e.login for e in entries if goals_by_login.get(e.login)]
+            bare = [e.login for e in entries if not goals_by_login.get(e.login)]
+            if keyed and bare:
+                def _gl(n: int) -> str:
+                    if n % 10 == 1 and n % 100 != 11:
+                        return f"{n} цель"
+                    if 2 <= n % 10 <= 4 and n % 100 not in (12, 13, 14):
+                        return f"{n} цели"
+                    return f"{n} целей"
+                counts = "; ".join(
+                    f"кабинет {login}: {_gl(len(goals_by_login[login]))}"
+                    for login in keyed
+                )
+                counts += "; " + "; ".join(
+                    f"кабинет {login}: без ключевых целей" for login in bare
+                )
+                if len(entries) <= 5:
+                    mixed = (f" атрибуция: {attribution} (кабинеты: "
+                             f"{', '.join(keyed)}); LC без целей (кабинеты: "
+                             f"{', '.join(bare)}). {counts}.")
+                else:
+                    mixed = (f" атрибуция: {attribution} ({_cabinet(len(keyed))}); "
+                             f"LC без целей ({_cabinet(len(bare))}). {counts}.")
         text = (
             f"{mark}{name}: {accounts}, {_period_label(params)}, расход {vat}, "
             f"атрибуция: {attribution}, целей: {len(goals)} ({src_label}), "
             f"режим: {params.goals_mode}{suffix}."
         )
+        if mixed:
+            text += mixed
         # v1.1.19: дубли визитов между целями + primary.
         mode = conv_mode(len(goals), params.primary_goal)
         if mode == "sum":
@@ -1905,6 +1996,7 @@ async def _run_report(
     if (name == "stats_keywords" and isinstance(params, KeywordsParams)
             and params.match_mode == "split" and "MatchType" not in dims):
         dims = [*dims, "MatchType"]
+    goals_by_login: dict[str, list[str]] = {}
     if definition_override is not None:
         chunks_by_login = {e.login: [definition_override] for e in entries}
         goals_info: tuple[list[str], str] | None = None
@@ -2176,7 +2268,54 @@ async def _run_report(
             empty_note += ((" " if empty_note else "") + fill_note)
     # v1.1.9: итоги для долей/топа — из сырых строк ДО производных колонок
     # (иначе totals() посчитал бы Conversions дважды: сырые + вычисленная).
-    render_totals = totals_override if totals_override is not None else totals(rows)
+    # v1.2.1: итог = Σ строк той же популяции целей и модели атрибуции.
+    # Деньги (показы/клики/расход) — из беcцелевого агрегата, если есть
+    # (v1.1.27: гранд-тотал без построчного округления НДС); конверсии
+    # и ценность — всегда Σ строк key-популяции.
+    from directai_mcp.fmt import num as _num
+    from directai_mcp.fmt import totals_line as _totals_line
+
+    union_goals = goals_info[0] if goals_info and goals_info[0] else []
+    goalless_logins = {e.login for e in entries if not goals_by_login.get(e.login)}
+    key_rows, bare_rows = _split_key_rows(rows, goalless_logins)
+    mixing = bool(union_goals) and bool(key_rows) and bool(bare_rows)
+    model = ",".join(effective_attribution(ctx, params))
+    totals_label = "Итого"
+    extra_totals_lines: list[str] = []
+    if union_goals and key_rows:
+        key_t = totals(key_rows)
+        pg = params.primary_goal or None
+        if pg:
+            key_t["Conversions"], key_t["Revenue"] = _key_sums(key_rows, pg)
+        if mixing:
+            render_totals = key_t
+            seen = {r.get(ACCOUNT_COL) for r in key_rows if r.get(ACCOUNT_COL)}
+            keyed_entries = [e.login for e in entries
+                             if goals_by_login.get(e.login)]
+            n_key = len(seen & set(keyed_entries)) or len(keyed_entries)
+            kind = ("key-целям" if (goals_info and goals_info[1].startswith("auto"))
+                    else "целям")
+            totals_label = (f"Итого по {kind} ({model}), {_cabinet(n_key)}")
+            all_money = (totals_override if totals_override is not None
+                         else totals(rows))
+            extra_totals_lines.append(
+                _totals_line(all_money, label="Итого (все кабинеты)",
+                             skip_conversions=True))
+        elif totals_override is not None:
+            render_totals = dict(totals_override)
+            render_totals["Conversions"] = key_t["Conversions"]
+            render_totals["Revenue"] = key_t["Revenue"]
+        else:
+            render_totals = key_t
+    else:
+        render_totals = (totals_override if totals_override is not None
+                         else totals(rows))
+    if union_goals and totals_override is not None:
+        lc_conv = totals_override.get("Conversions") or Decimal(0)
+        if lc_conv:
+            extra_totals_lines.append(
+                f"Конверсии (все цели, LC): {_num(lc_conv, 0)} "
+                "(другая популяция, не итог).")
     total_cost = render_totals.get("Cost") or Decimal(0)
     top_line: str | None = None
     if (
@@ -2225,7 +2364,8 @@ async def _run_report(
         + [c for c in dims_first if c != "#"]
     )
 
-    context = _context(ctx, name, entries, params, goals_info, value_info)
+    context = _context(ctx, name, entries, params, goals_info, value_info,
+                       goals_by_login=goals_by_login)
     # v1.1.21: сводка по типам критериев — по всем строкам (до обрезки
     # топ-N), перед таблицей фраз: автотаргетинг виден при любом limit.
     if name == "stats_keywords" and rows:
@@ -2274,6 +2414,8 @@ async def _run_report(
         with_version=True,
         header_map=header_map,
         value_map=slot_value_map(columns),
+        totals_label=totals_label,
+        extra_totals_lines=extra_totals_lines,
         # v1.1.29: смешанные типы ценности — агрегат Revenue не выводим.
         revenue_label=revenue_total_label(
             {g: value_types.get(g, "conditional") for g in rev_gids}),
@@ -2460,7 +2602,52 @@ async def _run_custom(ctx: Ctx, params: CustomParams) -> str:
         rows, n_empty = drop_empty_rows(rows)
         empty_note = _empty_note(n_empty) if n_empty else ""
     # v1.1.9: итоги из сырых строк ДО производных (без двойного счёта).
-    render_totals = totals_override if totals_override is not None else totals(rows)
+    # v1.2.1: итог = Σ строк той же популяции (как в _run_report):
+    # деньги — агрегат без целей, конверсии/ценность — Σ key-строк.
+    from directai_mcp.fmt import num as _cnum
+    from directai_mcp.fmt import totals_line as _ctotals_line
+
+    union_goals = goals_info[0] if goals_info and goals_info[0] else []
+    goalless_logins = {e.login for e in entries if not goals_by_login.get(e.login)}
+    key_rows, bare_rows = _split_key_rows(rows, goalless_logins)
+    mixing = bool(union_goals) and bool(key_rows) and bool(bare_rows)
+    model = ",".join(effective_attribution(ctx, params))
+    totals_label = "Итого"
+    extra_totals_lines: list[str] = []
+    if union_goals and key_rows:
+        key_t = totals(key_rows)
+        pg = params.primary_goal or None
+        if pg:
+            key_t["Conversions"], key_t["Revenue"] = _key_sums(key_rows, pg)
+        if mixing:
+            render_totals = key_t
+            seen = {r.get(ACCOUNT_COL) for r in key_rows if r.get(ACCOUNT_COL)}
+            keyed_entries = [e.login for e in entries
+                             if goals_by_login.get(e.login)]
+            n_key = len(seen & set(keyed_entries)) or len(keyed_entries)
+            kind = ("key-целям" if (goals_info and goals_info[1].startswith("auto"))
+                    else "целям")
+            totals_label = (f"Итого по {kind} ({model}), {_cabinet(n_key)}")
+            all_money = (totals_override if totals_override is not None
+                         else totals(rows))
+            extra_totals_lines.append(
+                _ctotals_line(all_money, label="Итого (все кабинеты)",
+                              skip_conversions=True))
+        elif totals_override is not None:
+            render_totals = dict(totals_override)
+            render_totals["Conversions"] = key_t["Conversions"]
+            render_totals["Revenue"] = key_t["Revenue"]
+        else:
+            render_totals = key_t
+    else:
+        render_totals = (totals_override if totals_override is not None
+                         else totals(rows))
+    if union_goals and totals_override is not None:
+        lc_conv = totals_override.get("Conversions") or Decimal(0)
+        if lc_conv:
+            extra_totals_lines.append(
+                f"Конверсии (все цели, LC): {_cnum(lc_conv, 0)} "
+                "(другая популяция, не итог).")
     total_cost = render_totals.get("Cost") or Decimal(0)
     top_line: str | None = None
     if params.limit and len(rows) > params.limit:
@@ -2483,7 +2670,7 @@ async def _run_custom(ctx: Ctx, params: CustomParams) -> str:
         + [c for c in dims_first if c not in ("#", ACCOUNT_COL)]
     )
     context = _context(ctx, "stats_custom", entries, params, goals_info,
-                       value_info)
+                       value_info, goals_by_login=goals_by_login)
     out = finalize(
         ctx,
         context,
@@ -2507,6 +2694,8 @@ async def _run_custom(ctx: Ctx, params: CustomParams) -> str:
         # v1.1.29: смешанные типы ценности — агрегат Revenue не выводим.
         revenue_label=revenue_total_label(
             {g: value_types.get(g, "conditional") for g in rev_gids}),
+        totals_label=totals_label,
+        extra_totals_lines=extra_totals_lines,
     )
     if value_lines:
         out += "\n\n" + "\n".join(value_lines)

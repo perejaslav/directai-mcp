@@ -121,11 +121,14 @@ PCT_COLS = ("CTR", "CostShare", "CR", "CR (сумма по целям)", "Bounce
 
 def totals_line(t: dict[str, Decimal], single_goal: bool = False,
                 totals_suffix: str | None = None,
-                revenue_label: str | None = "Ценность целей (условная)") -> str:
+                revenue_label: str | None = "Ценность целей (условная)",
+                label: str = "Итого", skip_conversions: bool = False) -> str:
     """Итоговая строка; суммы Revenue всегда условная ценность (v1.1.1–1.1.2).
 
     v1.1.29: revenue_label — подпись агрегата Revenue («Выручка CRM» для
     CRM-целей); None — агрегат не выводить (смешанные типы ценности).
+    v1.2.1: label — подпись строки («Итого по key-целям …»);
+    skip_conversions — только деньги (строка «все кабинеты», без конверсий).
     """
     clicks, impr, cost = t["Clicks"], t["Impressions"], t["Cost"]
     conv, revenue = t["Conversions"], t["Revenue"]
@@ -139,15 +142,15 @@ def totals_line(t: dict[str, Decimal], single_goal: bool = False,
         f"Расход: {money(cost)} ₽",
         f"CPC: {money(cpc)} ₽",
     ]
-    if conv:
+    if conv and not skip_conversions:
         parts += [f"Конверсии: {num(conv, 0)}", f"CPA: {money(cpa)} ₽"]
         # v1.1.26: CR итога — только из сумм (не усреднение по строкам).
         if clicks:
             parts += [f"CR: {num(conv / clicks * 100)}%"]
-    if revenue and not single_goal and revenue_label:
+    if revenue and not single_goal and revenue_label and not skip_conversions:
         # v1.1.26: «Выручки» нет — только условная ценность.
         parts += [f"{revenue_label}: {money(revenue)} ₽"]
-    line = "Итого: " + "; ".join(parts) + "."
+    line = f"{label}: " + "; ".join(parts) + "."
     if totals_suffix:
         line += f" {totals_suffix}"
     return line
@@ -188,6 +191,10 @@ def render_table(
     # v1.1.27: подписи значений ячеек только для MD/inline
     # (CSV/JSON хранят сырые значения API).
     value_map: dict[str, dict[str, str]] | None = None,
+    # v1.2.1: подпись главной итоговой строки + доп. строки итогов
+    # («все кабинеты», «все цели LC») — только inline/MD.
+    totals_label: str = "Итого",
+    extra_totals_lines: list[str] | None = None,
 ) -> str:
     """Markdown table capped at `limit` rows, sorted by Cost desc upstream."""
     shown = rows[:limit]
@@ -221,7 +228,9 @@ def render_table(
             lines.append(top_line)
         lines.append("")
         base = totals_override if totals_override is not None else totals(rows)
-        lines.append(totals_line(base, single_goal, totals_suffix, revenue_label))
+        lines.append(totals_line(base, single_goal, totals_suffix,
+                                 revenue_label, totals_label))
+        lines.extend(extra_totals_lines or [])
     return "\n".join(lines)
 
 
@@ -255,6 +264,8 @@ def save_md(
     totals_override: dict | None = None,
     totals_suffix: str | None = None,
     top_line: str | None = None,
+    totals_label: str = "Итого",
+    extra_totals_lines: list[str] | None = None,
 ) -> Path:
     """Full result as Markdown table with header (account, dates, totals)."""
     exports_dir.mkdir(parents=True, exist_ok=True)
@@ -262,7 +273,9 @@ def save_md(
     path = exports_dir / f"{base}-{stamp}.md"
     body = render_table(context, columns, rows, max(len(rows), 1),
                         single_goal=single_goal, totals_override=totals_override,
-                        totals_suffix=totals_suffix, top_line=top_line)
+                        totals_suffix=totals_suffix, top_line=top_line,
+                        totals_label=totals_label,
+                        extra_totals_lines=extra_totals_lines)
     with path.open("w", encoding="utf-8", newline="") as f:
         f.write(f"# {base}\n\n{body}\n")
     return path
@@ -330,6 +343,9 @@ def save_report_table(
     value_map: dict[str, dict[str, str]] | None = None,
     # v1.1.29: подпись агрегата Revenue (None — не выводить).
     revenue_label: str | None = "Ценность целей (условная)",
+    # v1.2.1: подпись главной итоговой строки + доп. строки итогов.
+    totals_label: str = "Итого",
+    extra_totals_lines: list[str] | None = None,
 ) -> Path:
     """Шаг 1.1-3: md/csv в каталог отчётов с именем по шаблону шага 3."""
     reports_dir.mkdir(parents=True, exist_ok=True)
@@ -341,7 +357,9 @@ def save_report_table(
                             totals_suffix=totals_suffix,
                             top_line=top_line, header_map=header_map,
                             value_map=value_map,
-                            revenue_label=revenue_label)
+                            revenue_label=revenue_label,
+                            totals_label=totals_label,
+                            extra_totals_lines=extra_totals_lines)
         with path.open("w", encoding="utf-8", newline="") as f:
             f.write(f"# {action}\n\n{body}\n")
     else:
