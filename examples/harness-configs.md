@@ -35,7 +35,7 @@ stdout занят протоколом MCP. Запись идёт через `pl
 ## Claude Code
 
 ```powershell
-claude mcp add directai-mcp -- directai-mcp
+claude mcp add --scope user directai-mcp -- directai-mcp
 ```
 
 Проверка: `claude mcp list`. Конфиг хранится в `~/.claude.json`.

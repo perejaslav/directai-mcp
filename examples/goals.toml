@@ -1,8 +1,8 @@
-# goals.toml — названия целей Метрики для отчётов (шаг 7, без API Метрики).
+# goals.toml — названия целей Метрики для отчётов.
 # Формат: "id" = "Название". В отчётах цель показывается как «Название (id)»;
 # если названия нет (пусто или строки нет) — голый id.
 # Табличная форма: name + counter (счётчик неосновного счётчика) + value_type
-# (v1.1.29: crm | conditional, default conditional). value_type — fallback:
+# (crm | conditional, default conditional). value_type — fallback:
 # при доступной Метрике тип берётся из Management API (cdp_order_* → crm).
 # Список id across campaigns выдаёт агент; названия вписывает владелец.
 # Файл необязателен: без него отчёты показывают голые id.

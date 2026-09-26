@@ -1,5 +1,8 @@
 # DirectAI MCP — личный сервер статистики и управления Яндекс Директом
 
+DirectAI MCP is a local MCP server for Yandex Direct stats and management.
+Runs on your Windows 11 PC for a single user. Start install at §1 below.
+
 Локальный MCP-сервер: ИИ-ассистенты (OpenCode, Codex и др.) через него читают
 статистику и управляют вашими аккаунтами Яндекс Директа.
 Только для одного пользователя, работает на вашем компьютере, в интернет
@@ -15,10 +18,15 @@ cd $env:USERPROFILE
 git clone https://github.com/perejaslav/directai-mcp.git directai-mcp
 cd $env:USERPROFILE\directai-mcp
 uv tool install --editable .
+uv tool update-shell
 directai-mcp init
-directai-mcp set-token
+directai-mcp set-token --login ВАШ_ЛОГИН
 directai-mcp check
 ```
+
+Впишите свой логин в `%USERPROFILE%\.directai\accounts.toml` (`[auth] login`,
+замените демо-алиасы) между `init` и `set-token`; в `set-token` передайте
+тот же логин флагом `--login`.
 
 Что происходит: `init` создаёт `%USERPROFILE%\.directai\` и копирует примеры
 конфигов (существующие не трогает); `set-token` маскированно спрашивает токен
@@ -215,6 +223,10 @@ Manager (`directai-mcp`) или переменная `DIRECTAI_TOKEN`.
 Guard это контролирует: перед каждой записью сверяет
 **живое имя кампании** через API.
 
+Как завести тестовую кампанию: создайте в интерфейсе Директа кампанию
+с именем, начинающимся на `[TEST DirectAI]` (можно черновик); только в ней
+доступны replace, пауза кампаний/объявлений, удаления.
+
 Коротко о правилах:
 - бюджеты и смена стратегии — запрещены везде, даже в тестовых;
 - в боевых кампаниях можно: фразы, объявления, ссылки/уточнения, регионы,
@@ -279,9 +291,10 @@ directai-mcp check
 | Не хватает баллов API | Подождите сброса лимита; остаток виден в `check` |
 | Харнес не видит сервер | Полный путь к exe (`uv tool dir`), перезапуск харнеса, логи в `.directai\logs` |
 | План с предупреждениями не применяется | Это защита: повторите `apply_write` с `acknowledge_warnings=true` только после вашего согласия |
+| `token missing for login 'X'` | Токен сохранён под другим логином: выполните `directai-mcp set-token --login <[auth] login>` с логином из `accounts.toml` |
 
 ## 9. Что отложено
 
 Вордстат, удалённый HTTP-режим, многопользовательский режим.
-Метрика частично уже внутри: цели подписаны через `goals.toml`,
-счётчики проверяет `counter_check`.
+Метрика частично уже внутри: типы целей — из API Метрики (`metrika:read`),
+`goals.toml` — названия и запасной тип; счётчики проверяет `counter_check`.

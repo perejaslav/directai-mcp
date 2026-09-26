@@ -2,7 +2,7 @@
 required = true                 # blocking: TEXT_AD requires DisplayUrlPath
 
 [titles]
-product_words = ["товар", "услуга", "каталог", "доставка"]
+product_words = []                # впишите слова, которые должны быть в заголовках
 mode = "warn"                   # title without listed word -> warning
 
 [extensions]
