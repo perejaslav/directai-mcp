@@ -69,9 +69,9 @@ args = []
 ## Hermes
 
 Hermes спрашивает подтверждение (`y`) — регистрация неинтерактивная,
-ответ подаётся через pipe. Путь к exe — абсолютный, из `uv tool dir`
-(например `%APPDATA%\uv\tools\directai-mcp\Scripts\directai-mcp.exe`;
-точный путь покажет `uv tool dir`):
+ответ подаётся через pipe. Путь к exe — стабильный лаунчер (узнать:
+`(Get-Command directai-mcp).Source`, обычно
+`%USERPROFILE%\.local\bin\directai-mcp.exe`):
 
 ```powershell
 echo y | hermes mcp add directai-mcp --command "<абсолютный путь к directai-mcp.exe>"

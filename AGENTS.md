@@ -29,12 +29,21 @@ cd $env:USERPROFILE\directai-mcp
 
 ## 2. Никогда не делай cd внутрь uv tool dir
 
-Каталог установки (`uv tool dir`, например
-`%APPDATA%\uv\tools\directai-mcp`) — только читай (путь к exe для конфига
-харнеса). Рабочий каталог для команд — `$env:USERPROFILE` или корень
-репозитория. Перед `uv tool install --force` — сначала бэкап, и бэкап
-клади ВНЕ tool dir (например `$env:USERPROFILE\directai-mcp-tool-backup-<дата>`):
-копии внутри tool dir `uv` считает инструментами и выдаёт `malformed`.
+Каталог установки (`uv tool dir`) — служебный: не делай туда `cd`,
+не клади туда копии и бэкапы (копии внутри tool dir `uv` считает
+инструментами и выдаёт `malformed`). Рабочий каталог для команд —
+`$env:USERPROFILE` или корень репозитория. Перед
+`uv tool install --force` — сначала бэкап ВНЕ tool dir (например
+`$env:USERPROFILE\directai-mcp-tool-backup-<дата>`).
+
+Путь к exe для конфигов харнесов — стабильный лаунчер:
+
+```powershell
+(Get-Command directai-mcp).Source
+```
+
+(обычно `%USERPROFILE%\.local\bin\directai-mcp.exe`). Указывай в
+конфигах именно его — не путь внутрь tool dir.
 
 ## 3. «Ignoring malformed tool» — не сноси рабочий инструмент
 
@@ -54,10 +63,23 @@ Get-CimInstance Win32_Process -Filter 'Name="directai-mcp.exe"' |
   Select-Object ProcessId, ParentProcessId, CommandLine
 ```
 
-Чужие процессы не убивай. Попроси человека закрыть харнесы и повтори
-после подтверждения. Сам агент, работающий внутри харнеса, переустановку
-при живых харнесах не выполняет — готовит блок команд, человек запускает
-его сам в обычном PowerShell при закрытых харнесах.
+Важно: шлюз Hermes (`python.exe … hermes_cli.main … gateway run`)
+работает в фоне и держит `directai-mcp.exe` даже при закрытых окнах
+харнесов. Поэтому перед переустановкой человек САМ останавливает
+сервер и шлюз, затем запускает Hermes заново:
+
+```powershell
+Get-Process directai-mcp -ErrorAction SilentlyContinue | Stop-Process
+Get-CimInstance Win32_Process -Filter 'Name="python.exe"' |
+  Where-Object { $_.CommandLine -like '*hermes_cli.main*gateway run*' } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId }
+```
+
+Чужие процессы агент не убивает — команды выполняет человек.
+Сам агент, работающий внутри харнеса, переустановку при живых
+харнесах не выполняет — готовит блок команд, человек запускает
+его сам в обычном PowerShell при закрытых харнесах и остановленном
+шлюзе (после установки Hermes запускается заново).
 
 ## 5. Проверка — только по цепочке, сырые stdio-пробы запрещены
 

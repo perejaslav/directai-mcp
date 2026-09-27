@@ -275,20 +275,46 @@ Guard это контролирует: перед каждой записью с
 
 ## 7. Обновление
 
+Перед обновлением: закройте все окна харнесов и остановите фоновый
+шлюз Hermes (он держит `directai-mcp.exe` даже при закрытых окнах) —
+команды выполняет человек в обычном PowerShell:
+
+```powershell
+Get-Process directai-mcp -ErrorAction SilentlyContinue | Stop-Process
+Get-CimInstance Win32_Process -Filter 'Name="python.exe"' |
+  Where-Object { $_.CommandLine -like '*hermes_cli.main*gateway run*' } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId }
+```
+
+Обновление с бэкапом вне uv tool dir и откатом при ошибке
+(без `exit` — он закрывает окно PowerShell):
+
 ```powershell
 cd $env:USERPROFILE\directai-mcp
 git pull
+$stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+$tooldir = uv tool dir
+Copy-Item "$tooldir\directai-mcp" "$env:USERPROFILE\directai-mcp-tool-backup-$stamp" -Recurse
 uv tool install --editable .
 uv tool update-shell
-directai-mcp check
-directai-mcp probe
+if ($LASTEXITCODE -ne 0) {
+  Remove-Item "$tooldir\directai-mcp" -Recurse -Force
+  Copy-Item "$env:USERPROFILE\directai-mcp-tool-backup-$stamp" "$tooldir\directai-mcp" -Recurse
+  Write-Output "ОТКАТ: инструмент восстановлен из бэкапа"
+} else {
+  directai-mcp check
+  directai-mcp probe
+  Remove-Item "$env:USERPROFILE\directai-mcp-tool-backup-$stamp" -Recurse -Force
+}
 ```
 
 `init` после обновления можно повторить: существующие конфиги не затрутся,
-недостающие (например, новые примеры) докопируются. Перед обновлением
-закройте все окна харнеса, после — откройте заново (сервер подхватывается
-при старте). Никогда не делайте `cd` внутрь каталога установки
-(`uv tool dir`); бэкап перед `--force` — только вне tool dir.
+недостающие (например, новые примеры) докопируются. После обновления
+откройте харнесы заново и запустите Hermes (сервер подхватывается при
+старте). Никогда не делайте `cd` внутрь каталога установки (`uv tool dir`):
+бэкап перед установкой — только вне tool dir (копии внутри tool dir `uv`
+считает инструментами и выдаёт `malformed`); бэкап удаляется только при
+успехе, при ошибке — откат из бэкапа.
 
 ## 8. Типичные ошибки
 
@@ -298,11 +324,11 @@ directai-mcp probe
 | Ошибка 58 (регистрация приложения) | Завершите заявку на доступ к API в интерфейсе Директа |
 | Ошибка 513 (логин не подключён) | Логин не привязан к Директу — проверьте `Client-Login`/аккаунт |
 | Не хватает баллов API | Подождите сброса лимита; остаток виден в `check` |
-| Харнес не видит сервер | Полный путь к exe (`uv tool dir`), перезапуск харнеса, логи в `.directai\logs` |
+| Харнес не видит сервер | Стабильный путь к exe — `(Get-Command directai-mcp).Source` (обычно `%USERPROFILE%\.local\bin\directai-mcp.exe`); перезапуск харнеса, логи в `.directai\logs` |
 | План с предупреждениями не применяется | Это защита: повторите `apply_write` с `acknowledge_warnings=true` только после вашего согласия |
 | `token missing for login 'X'` | Токен сохранён под другим логином: выполните `directai-mcp set-token --login <[auth] login>` с логином из `accounts.toml` |
 | `Ignoring malformed tool` | Битая копия/рецепт, не повод сносить рабочий инструмент: закройте все окна харнесов и переустановите с `--force` (бэкап — вне tool dir). `uninstall` — только для заведомо мусорных записей |
-| `os error 32` при переустановке | exe занят MCP-клиентами: покажите владельцев (`Get-CimInstance Win32_Process -Filter 'Name="directai-mcp.exe"'`, поле `ParentProcessId`), чужие процессы не убивайте, попросите человека закрыть харнесы. Висящие `opencode serve` — тоже владельцы: их закрывают штатно, не `kill` |
+| `os error 32` при переустановке | exe занят MCP-клиентами: покажите владельцев (`Get-CimInstance Win32_Process -Filter 'Name="directai-mcp.exe"'`, поле `ParentProcessId`), чужие процессы не убивайте. Шлюз Hermes (`python.exe … hermes_cli.main … gateway run`) работает в фоне и держит exe даже при закрытых окнах — человек останавливает его сам (см. §7: остановка сервера и шлюза), после установки запускает Hermes заново. Висящие `opencode serve` — тоже владельцы: их закрывают штатно, не `kill` |
 | Как быстро проверить сервер | `directai-mcp --version` → `check` → `probe` (две строки OK, `stats_summary` найден; баллы не тратятся). Сырые stdio-пробы вручную не делать |
 
 ## 9. Что отложено
