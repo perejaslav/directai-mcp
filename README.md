@@ -3,12 +3,23 @@
 > ИИ-агент? Следуй [AGENTS.md](AGENTS.md).
 
 DirectAI MCP is a local MCP server for Yandex Direct stats and management.
-Runs on your Windows 11 PC for a single user. Start install at §1 below.
+Runs on your Windows 11 PC for a single user. Tested on Windows 11 only;
+macOS/Linux not supported. Start install at §1 below.
 
 Локальный MCP-сервер: ИИ-ассистенты (OpenCode, Codex и др.) через него читают
 статистику и управляют вашими аккаунтами Яндекс Директа.
 Только для одного пользователя, работает на вашем компьютере, в интернет
 ничего не выставляет.
+
+## Прежде чем устанавливать
+
+- ОС: проверено только на Windows 11. Инструкции — только для PowerShell.
+  macOS/Linux не тестировались и не поддерживаются.
+- Нужен свой аккаунт Яндекс Директа и одобренный доступ к API (заявка
+  рассматривается до нескольких дней).
+- Нужен ИИ-харнес с поддержкой MCP (OpenCode, Codex, Claude Code,
+  Claude Desktop, Hermes и др.).
+- Один пользователь, локально на своём компьютере.
 
 ## 1. Установка с нуля
 
