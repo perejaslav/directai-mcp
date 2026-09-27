@@ -30,7 +30,7 @@ stdout занят протоколом MCP. Запись идёт через `pl
 ```
 
 Если команда не на PATH, укажите полный путь к `directai-mcp.exe`
-(покажет `uv tool dir`). Перезапустите Claude Desktop.
+(покажет `(Get-Command directai-mcp).Source`). Перезапустите Claude Desktop.
 
 ## Claude Code
 

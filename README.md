@@ -136,7 +136,7 @@ args = []
 
 Остальные (Claude Desktop, Claude Code) — готовые фрагменты в
 `examples/harness-configs.md`. Если харнес не видит команду, укажите полный
-путь к `directai-mcp.exe` (покажет `uv tool dir`).
+путь к `directai-mcp.exe` (покажет `(Get-Command directai-mcp).Source`).
 
 Проверка (задать ИИ): «Покажи расходы по всем аккаунтам за последние 7 дней» —
 итоги должны совпасть с веб-интерфейсом Директа.
