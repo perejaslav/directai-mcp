@@ -1,5 +1,7 @@
 # DirectAI MCP — личный сервер статистики и управления Яндекс Директом
 
+> ИИ-агент? Следуй [AGENTS.md](AGENTS.md).
+
 DirectAI MCP is a local MCP server for Yandex Direct stats and management.
 Runs on your Windows 11 PC for a single user. Start install at §1 below.
 
@@ -92,13 +94,17 @@ directai-mcp set-token — и введёт токен в скрытое поле
 у логина нет аккаунта в Директе (создай кампанию в интерфейсе); 152 —
 кончились баллы API, подождать до завтра. Коды:
 https://yandex.ru/dev/direct/doc/ref-v5/concepts/errors-list.html
-8. Подключи харнес: сначала спроси, какой — OpenCode, Codex или Claude Code.
+8. Самопроверка сервера: directai-mcp probe. Ожидание — две строки OK
+(версия сервера, число инструментов, stats_summary найден). Баллы API
+не тратятся. Сырые stdio-пробы вручную не делать — только probe.
+9. Подключи харнес: сначала спроси, какой — OpenCode, Codex или Claude Code.
 Сделай копию его конфига (*.bak), потом ДОПИШИ блок directai-mcp, чужие MCP
 не трогай. Готовые блоки — examples/harness-configs.md.
 9. Попроси человека САМОГО перезапустить харнес (закрыть все его окна
 и открыть заново). В новой сессии пусть спросит:
 «Используй только directai-mcp: покажи расходы по всем аккаунтам за вчера» —
 и сверит цифры с веб-интерфейсом Директа. Сошлось — готово.
+10. Удали свои бэкапы (*.bak-*, *-tool-backup-*), чужие файлы не трогай.
 ```
 
 ## 2. Подключение к харнесам
@@ -273,13 +279,16 @@ Guard это контролирует: перед каждой записью с
 cd $env:USERPROFILE\directai-mcp
 git pull
 uv tool install --editable .
+uv tool update-shell
 directai-mcp check
+directai-mcp probe
 ```
 
 `init` после обновления можно повторить: существующие конфиги не затрутся,
 недостающие (например, новые примеры) докопируются. Перед обновлением
 закройте все окна харнеса, после — откройте заново (сервер подхватывается
-при старте).
+при старте). Никогда не делайте `cd` внутрь каталога установки
+(`uv tool dir`); бэкап перед `--force` — только вне tool dir.
 
 ## 8. Типичные ошибки
 
@@ -292,6 +301,9 @@ directai-mcp check
 | Харнес не видит сервер | Полный путь к exe (`uv tool dir`), перезапуск харнеса, логи в `.directai\logs` |
 | План с предупреждениями не применяется | Это защита: повторите `apply_write` с `acknowledge_warnings=true` только после вашего согласия |
 | `token missing for login 'X'` | Токен сохранён под другим логином: выполните `directai-mcp set-token --login <[auth] login>` с логином из `accounts.toml` |
+| `Ignoring malformed tool` | Битая копия/рецепт, не повод сносить рабочий инструмент: закройте все окна харнесов и переустановите с `--force` (бэкап — вне tool dir). `uninstall` — только для заведомо мусорных записей |
+| `os error 32` при переустановке | exe занят MCP-клиентами: покажите владельцев (`Get-CimInstance Win32_Process -Filter 'Name="directai-mcp.exe"'`, поле `ParentProcessId`), чужие процессы не убивайте, попросите человека закрыть харнесы. Висящие `opencode serve` — тоже владельцы: их закрывают штатно, не `kill` |
+| Как быстро проверить сервер | `directai-mcp --version` → `check` → `probe` (две строки OK, `stats_summary` найден; баллы не тратятся). Сырые stdio-пробы вручную не делать |
 
 ## 9. Что отложено
 

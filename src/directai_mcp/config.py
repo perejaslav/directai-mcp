@@ -127,7 +127,9 @@ def load_settings(path: Path | None = None) -> Settings:
         legacy.append(str(alias))
     if legacy:
         logging.getLogger(__name__).warning(
-            "старый формат конфига: секции %s трактуются как aliases",
+            "старый формат конфига: секции %s трактуются как aliases. "
+            "Исправление: переименуйте [accounts.X] в [aliases.X] "
+            "(содержимое секций не менять)",
             ", ".join(f"[accounts.{a}]" for a in legacy),
         )
     raw_aliases = data.get("aliases", {})

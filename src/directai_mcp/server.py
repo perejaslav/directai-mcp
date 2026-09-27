@@ -43,6 +43,7 @@ _ACTION_MODULES = (
     negatives_mod,
     stats_mod,
 )
+from directai_mcp import __version__
 from directai_mcp.catalog.registry import ACTIONS, Ctx, search
 from directai_mcp.config import (
     ConfigError,
@@ -141,6 +142,10 @@ def accounts_table(settings) -> str:
 
 def build_server(sandbox: bool = False) -> FastMCP:
     mcp = FastMCP("directai-mcp", instructions=INSTRUCTIONS)
+    # v1.2.3: FastMCP не передаёт версию во внутренний lowlevel-сервер —
+    # SDK подставляет версию пакета mcp (1.30.0) в serverInfo. Проставляем
+    # явно, чтобы initialize отдавал версию CLI (__version__).
+    mcp._mcp_server.version = __version__
 
     def _ctx() -> Ctx:
         settings = load_settings()

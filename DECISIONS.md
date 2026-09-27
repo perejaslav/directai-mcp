@@ -1,5 +1,40 @@
 # DECISIONS.md — отступления от SPEC и уточнения
 
+## v1.2.3: serverInfo, warning с инструкцией, probe, AGENTS.md (27.09.2026)
+- `serverInfo.version` в initialize = `__version__` пакета: `FastMCP` не
+  передаёт версию во внутренний lowlevel-сервер, SDK подставлял версию
+  пакета `mcp` (1.30.0 при CLI 1.2.2). `build_server` проставляет
+  `mcp._mcp_server.version = __version__` явно. Тест
+  `tests/test_v123_server_info.py` (совпадение + отличие от версии SDK).
+- Warning старого формата конфига дополнен инструкцией: «переименуйте
+  [accounts.X] в [aliases.X] (содержимое секций не менять)» — в лог
+  (`config.load_settings`) и в `accounts_discover`. Голый `[accounts]`
+  с `exclude` — не legacy, warning нет (тест).
+- Новая команда `directai-mcp probe`: поднимает сервер как MCP-клиент
+  (stdio, `sys.executable -m directai_mcp.cli`, добавлен `__main__`-guard),
+  initialize → tools/list → `search_actions("итоги по аккаунтам")`;
+  печатает OK/FAIL, число инструментов, версию serverInfo; exit code 0/1.
+  Reports API не трогает (баллы не тратятся). Тест — живьём
+  (`tests/test_v123_probe.py`).
+- `AGENTS.md` в корне — протокол для ИИ-агента по ссылке на репо:
+  git clone в постоянный каталог; токен — блокирующий шаг человека;
+  запрет `cd` в uv tool dir, бэкап перед `--force` только вне tool dir;
+  malformed → переустановка поверх, не uninstall рабочего; os error 32 →
+  владельцы по ParentProcessId, чужие процессы не убивать; проверка только
+  по цепочке `--version → check → probe → регистрация → тест → reload →
+  реальный запрос`, сырые stdio-пробы запрещены; чужой MCP — только по
+  просьбе последним шагом; после успеха — удалить свои бэкапы.
+- README: строка «ИИ-агент? Следуй AGENTS.md» в начале; §1.1 шаги 8–10
+  (probe, удаление бэкапов); §7 — запрет `cd` в tool dir; §8 — строки
+  про malformed, os error 32 (включая висящие opencode serve), probe.
+- `examples/harness-configs.md` — секция Hermes: неинтерактивная
+  регистрация (`echo y | ...` / `printf 'y\n' | ...` с абсолютным путём
+  к exe), `hermes mcp test`, затем `/reload-mcp` или новая сессия;
+  `mcp test` ≠ доступность в сессии.
+- Живая проверка: боевая миграция `[accounts.*]` → `[aliases.*]`
+  без изменения данных + `check` (5×OK).
+- Тесты: +4 в `tests/test_v123_*.py`. Всего 407 passed, ruff чист.
+
 ## v1.2.2: пометка строк, шапка счётчиками, общий расчёт итогов
 - Строки беcцельных кабинетов помечены прямо в таблице: колонка «Модель»
   (key-строки — модель, беcцельные — «все цели (LC) »); видна в MD/inline,

@@ -174,6 +174,62 @@ def cmd_serve(sandbox: bool = False) -> int:
     return 0
 
 
+# v1.2.3: самопроверка MCP через настоящий клиент (initialize → tools/list →
+# search_actions). Только локальные вызовы, Reports API не трогает (баллы
+# не тратятся). Сырые stdio-пробы вручную не делать — только эта команда.
+PROBE_QUERY = "итоги по аккаунтам"
+PROBE_EXPECTED = "stats_summary"
+
+
+def _probe_text(result) -> str:
+    parts = []
+    for block in getattr(result, "content", []) or []:
+        text = getattr(block, "text", None)
+        if text:
+            parts.append(text)
+    return "\n".join(parts)
+
+
+async def _probe_async(timeout: float) -> int:
+    from mcp import ClientSession
+    from mcp.client.stdio import StdioServerParameters, stdio_client
+
+    params = StdioServerParameters(command=sys.executable,
+                                   args=["-m", "directai_mcp.cli"])
+    try:
+        async with (
+            asyncio.timeout(timeout),
+            stdio_client(params) as (read, write),
+            ClientSession(read, write) as session,
+        ):
+            init = await session.initialize()
+            listed = await session.list_tools()
+            names = [t.name for t in listed.tools]
+            if "search_actions" not in names:
+                print("FAIL tools/list: нет search_actions")
+                return 1
+            res = await session.call_tool(
+                "search_actions",
+                {"query": PROBE_QUERY, "mode": "any"},
+            )
+    except Exception as e:  # noqa: BLE001
+        print(f"FAIL probe: {e}")
+        return 1
+    info = init.serverInfo
+    found = PROBE_EXPECTED in _probe_text(res)
+    print(f"OK server={info.name} version={info.version} tools={len(names)}")
+    print(
+        f"{'OK' if found else 'FAIL'} "
+        f"search_actions({PROBE_QUERY!r}): {PROBE_EXPECTED} "
+        f"{'найден' if found else 'НЕ найден'}"
+    )
+    return 0 if found else 1
+
+
+def cmd_probe(timeout: float = 30.0) -> int:
+    return asyncio.run(_probe_async(timeout))
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="directai-mcp", description="DirectAI MCP")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -188,6 +244,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("check", help="Clients.get + campaign count per account")
     sub.add_parser("serve", help="run MCP server over STDIO (step 2)")
+    pr = sub.add_parser(
+        "probe",
+        help="self-check over MCP: initialize, tools/list, search_actions",
+    )
+    pr.add_argument("--timeout", type=float, default=30.0)
     return p
 
 
@@ -201,4 +262,10 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(cmd_set_token(args.login))
     if args.command == "check":
         raise SystemExit(cmd_check(sandbox=args.sandbox))
+    if args.command == "probe":
+        raise SystemExit(cmd_probe(timeout=args.timeout))
     raise SystemExit(cmd_serve(sandbox=args.sandbox))
+
+
+if __name__ == "__main__":
+    main()

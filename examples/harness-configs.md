@@ -66,6 +66,33 @@ command = "directai-mcp"
 args = []
 ```
 
+## Hermes
+
+Hermes спрашивает подтверждение (`y`) — регистрация неинтерактивная,
+ответ подаётся через pipe. Путь к exe — абсолютный, из `uv tool dir`
+(например `%APPDATA%\uv\tools\directai-mcp\Scripts\directai-mcp.exe`;
+точный путь покажет `uv tool dir`):
+
+```powershell
+echo y | hermes mcp add directai-mcp --command "<абсолютный путь к directai-mcp.exe>"
+```
+
+```bash
+printf 'y\n' | hermes mcp add directai-mcp --command "<абсолютный путь к directai-mcp.exe>"
+```
+
+Проверка соединения:
+
+```powershell
+hermes mcp test directai-mcp
+```
+
+Затем `/reload-mcp` или новая сессия (человек перезапускает сам).
+Важно: `mcp test` проверяет только соединение — доступность сервера
+в сессии подтверждает лишь реальный запрос в новой сессии
+(«Используй только directai-mcp: покажи расходы по всем аккаунтам
+за вчера») со сверкой цифр с веб-интерфейсом Директа.
+
 ## Проверка после подключения (задать ИИ)
 
 1. `Покажи расходы по всем аккаунтам за последние 7 дней`

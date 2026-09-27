@@ -295,7 +295,8 @@ async def _discover(ctx: Ctx, params: BaseModel) -> str:
         extra.append(
             "старый формат конфига: секции "
             + ", ".join(f"[accounts.{a}]" for a in ctx.settings.legacy_sections)
-            + " трактуются как aliases"
+            + " трактуются как aliases; исправление: переименуйте "
+            "[accounts.X] в [aliases.X] (содержимое секций не менять)"
         )
     return finalize(
         ctx, context, "accounts_discover",
