@@ -25,6 +25,7 @@ from directai_mcp.catalog import limits as limits_mod
 from directai_mcp.catalog import moderation as moderation_mod
 from directai_mcp.catalog import negatives as negatives_mod
 from directai_mcp.catalog import stats as stats_mod
+from directai_mcp.catalog import webmaster as webmaster_mod
 
 # Referenced so ruff --fix never drops these registration imports.
 _ACTION_MODULES = (
@@ -42,6 +43,7 @@ _ACTION_MODULES = (
     moderation_mod,
     negatives_mod,
     stats_mod,
+    webmaster_mod,
 )
 from directai_mcp import __version__
 from directai_mcp.catalog.registry import ACTIONS, Ctx, search

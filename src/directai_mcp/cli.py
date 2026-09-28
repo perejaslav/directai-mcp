@@ -16,6 +16,7 @@ from directai_mcp.api.direct import DirectClient
 from directai_mcp.api.errors import DirectError
 from directai_mcp.config import (
     KEYRING_SERVICE,
+    KEYRING_SERVICE_WEBMASTER,
     ConfigError,
     TokenMissingError,
     data_dir,
@@ -76,11 +77,14 @@ def cmd_init(home: Path | None = None) -> int:
     return 0
 
 
-def cmd_set_token(login: str | None = None) -> int:
+def cmd_set_token(login: str | None = None, webmaster: bool = False) -> int:
     """Masked token input, save to Windows Credential Manager."""
     target = data_dir()
     target.mkdir(parents=True, exist_ok=True)
     setup_logging(target)
+
+    service = KEYRING_SERVICE_WEBMASTER if webmaster else KEYRING_SERVICE
+    label = "Вебмастер" if webmaster else "основной"
 
     resolved_login = login
     if not resolved_login:
@@ -93,14 +97,14 @@ def cmd_set_token(login: str | None = None) -> int:
             print(f"no accounts.toml, using login '{resolved_login}'")
             print(f"hint: run `directai-mcp init` first (data dir: {target})")
 
-    token = getpass.getpass(f"token for {resolved_login}: ").strip()
+    token = getpass.getpass(f"token for {resolved_login} ({label}): ").strip()
     if not token:
         print("empty token, not saved", file=sys.stderr)
         return 1
     import keyring
 
-    keyring.set_password(KEYRING_SERVICE, resolved_login, token)
-    print(f"saved to Credential Manager: {KEYRING_SERVICE}/{resolved_login}")
+    keyring.set_password(service, resolved_login, token)
+    print(f"saved to Credential Manager: {service}/{resolved_login}")
     return 0
 
 
@@ -241,6 +245,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     st = sub.add_parser("set-token", help="save token to Credential Manager")
     st.add_argument("--login", default=None)
+    st.add_argument(
+        "--webmaster",
+        action="store_true",
+        help="сохранить отдельный токен Вебмастера (из приложения «для доступа к API»)",
+    )
 
     sub.add_parser("check", help="Clients.get + campaign count per account")
     sub.add_parser("serve", help="run MCP server over STDIO (step 2)")
@@ -259,7 +268,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "init":
         raise SystemExit(cmd_init())
     if args.command == "set-token":
-        raise SystemExit(cmd_set_token(args.login))
+        raise SystemExit(cmd_set_token(args.login, webmaster=args.webmaster))
     if args.command == "check":
         raise SystemExit(cmd_check(sandbox=args.sandbox))
     if args.command == "probe":

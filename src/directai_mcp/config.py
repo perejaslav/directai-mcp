@@ -9,6 +9,11 @@ from pathlib import Path
 
 KEYRING_SERVICE = "directai-mcp"
 TOKEN_ENV_VAR = "DIRECTAI_TOKEN"
+# Отдельный токен для API, не влезающих в права основного приложения
+# (у приложений «для авторизации пользователей» лимит 3 группы разрешений,
+# поэтому Яндекс.Вебмастер живёт в отдельном приложении «для доступа к API»).
+KEYRING_SERVICE_WEBMASTER = "directai-mcp-webmaster"
+WEBMASTER_TOKEN_ENV_VAR = "DIRECTAI_WEBMASTER_TOKEN"
 DEFAULT_AUTH_LOGIN = "agency-login"
 
 # Шаг 1.1-2: кеш обнаруженных кабинетов и его свежесть.
@@ -390,3 +395,19 @@ def get_token(auth_login: str) -> str:
         f"token missing for login '{auth_login}'. Run `directai-mcp set-token` "
         f"or set {TOKEN_ENV_VAR}."
     )
+
+
+def get_webmaster_token(auth_login: str) -> str | None:
+    """Отдельный токен Вебмастера или None (тогда вызывающий берёт основной).
+
+    Нужен, когда права не влезают в одно приложение: у приложений «для
+    авторизации пользователей» лимит 3 группы разрешений, поэтому Вебмастер
+    обычно выносят в отдельное приложение «для доступа к API».
+    Токен никогда не логируется и не печатается.
+    """
+    env_token = os.environ.get(WEBMASTER_TOKEN_ENV_VAR)
+    if env_token:
+        return env_token
+    import keyring
+
+    return keyring.get_password(KEYRING_SERVICE_WEBMASTER, auth_login)

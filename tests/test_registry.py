@@ -49,6 +49,9 @@ EXPECTED = frozenset(
         "accounts_discover",
         "accounts_check",
         "accounts_balance",
+        "webmaster_hosts",
+        "webmaster_summary",
+        "webmaster_query",
     }
 )
 
@@ -58,4 +61,4 @@ def test_registry_has_all_actions():
 
 
 def test_registration_imports_referenced():
-    assert len(server_mod._ACTION_MODULES) == 14
+    assert len(server_mod._ACTION_MODULES) == 15

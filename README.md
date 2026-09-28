@@ -189,15 +189,18 @@ args = []
 | `exports\` | CSV/MD-выгрузки из отчётов. |
 | `logs\` | Логи сервера. |
 
-Переопределить каталог: переменная `DIRECTAI_HOME`. Токен: только Credential
-Manager (`directai-mcp`) или переменная `DIRECTAI_TOKEN`.
+Переопределить каталог: переменная `DIRECTAI_HOME`. Токен Директа: только
+Credential Manager (`directai-mcp`) или переменная `DIRECTAI_TOKEN`. Для
+Яндекс.Вебмастера можно хранить отдельный токен: `directai-mcp set-token
+--webmaster` (Credential Manager `directai-mcp-webmaster` или переменная
+`DIRECTAI_WEBMASTER_TOKEN`); без него используется основной токен.
 
 ## 4. Что умеет сервер
 
 Порядок работы ИИ: `search_actions` → `describe_action` → `run_read`
 (чтение) или `plan_write` → показать вам → `apply_write` (запись).
 
-Чтение (29):
+Чтение (32):
 
 | Действие | Что делает |
 |---|---|
@@ -227,6 +230,7 @@ Manager (`directai-mcp`) или переменная `DIRECTAI_TOKEN`.
 | `accounts_discover`, `accounts_check`, `accounts_balance` | Кабинеты: поиск, проверка доступа, баллы |
 | `counter_check` | Проверка счётчиков Метрики кампании |
 | `moderation_check` | Статусы модерации объявлений |
+| `webmaster_hosts`, `webmaster_summary`, `webmaster_query` | Вебмастер: сайты и подтверждение прав, ИКС и проблемы, произвольный read-ресурс API v4 |
 
 Запись (15, все — только через план, см. §5):
 
@@ -364,6 +368,7 @@ if ($LASTEXITCODE -ne 0) {
 | Харнес не видит сервер | Стабильный путь к exe — `(Get-Command directai-mcp).Source` (обычно `%USERPROFILE%\.local\bin\directai-mcp.exe`); перезапуск харнеса, логи в `.directai\logs` |
 | План с предупреждениями не применяется | Это защита: повторите `apply_write` с `acknowledge_warnings=true` только после вашего согласия |
 | `token missing for login 'X'` | Токен сохранён под другим логином: выполните `directai-mcp set-token --login <[auth] login>` с логином из `accounts.toml` |
+| Вебмастер: «нет права» / «токен не принят» | Нужен отдельный токен: `directai-mcp set-token --webmaster` (приложение «для доступа к API» с правом `webmaster:hostinfo`) |
 | `Ignoring malformed tool` | Битая копия/рецепт, не повод сносить рабочий инструмент: закройте все окна харнесов и переустановите с `--force` (бэкап — вне tool dir). `uninstall` — только для заведомо мусорных записей |
 | `os error 32` при переустановке | exe занят MCP-клиентами: покажите владельцев (`Get-CimInstance Win32_Process -Filter 'Name="directai-mcp.exe"'`, поле `ParentProcessId`), чужие процессы не убивайте. Шлюз Hermes (`python.exe … hermes_cli.main … gateway run`) работает в фоне и держит exe даже при закрытых окнах — человек останавливает его сам (см. §7: остановка сервера и шлюза), после установки запускает Hermes заново. Висящие `opencode serve` — тоже владельцы: их закрывают штатно, не `kill` |
 | Как быстро проверить сервер | `directai-mcp --version` → `check` → `probe` (две строки OK, `stats_summary` найден; баллы не тратятся). Сырые stdio-пробы вручную не делать |
