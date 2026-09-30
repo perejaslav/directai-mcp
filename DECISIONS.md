@@ -1,5 +1,28 @@
 # DECISIONS.md — отступления от SPEC и уточнения
 
+## v1.2.6: Аудитории, этап 2 — запись из файла + delete (экспериментально, ветка feat/audience-api, 30.09.2026)
+- Два write-действия через plan_write → apply_write в новом
+  `catalog/audience_write.py` (`catalog/audiences.py` и `audience_segments.py`
+  не тронуты): `audience_segment_from_file` (uploading из CSV/TXT: phone/email,
+  нормализация и SHA256 локально, в API только хеши) и `audience_segment_delete`
+  (только `[TEST DirectAI]*` по живому имени). Кабинета у действий нет
+  (сегменты — владельца токена): `do_plan_write` веткой пишет план на
+  [auth] login без Direct-клиента; `prepare` ловит и AudienceError.
+- Confirm всегда content_type "crm": phone/email — поля CRM-формата
+  («в записи должно быть хотя бы одно из полей phone или email»).
+  Имя создания — только с префиксом (константа TEST_SEGMENT_PREFIX,
+  ограничение ветки). Файл с несколькими колонками без id_column отклоняется
+  сознательно: не гадаем, какая колонка контакты (иначе захешируем чужое).
+- ПДн: preview/before/requests/журнал/логи/ошибки — только метаданные (путь,
+  sha256 файла, счётчики, content_type, имя, id, статус); тела ответов POST
+  в ошибки не включаем (рядом наш payload); хеши живут только в памяти и во
+  временном файле системного temp с удалением в finally на всех путях.
+- Идемпотентность — штатная одноразовость планов (PlanStore.take; повторный
+  apply отклоняется), отдельных дедуп-механизмов у write-действий проекта нет.
+- Таймаут поллинга — не ошибка: apply «applied», verify ok=False с нотой
+  «ещё обрабатывается» → итог unverified + подсказка audience_segment_get.
+  processing_failed → partial; few_data → applied (на синтетике нормально).
+
 ## v1.2.5: Аудитории, этап 1 — токен + только чтение (экспериментально, ветка feat/audience-api, 30.09.2026)
 - Два read-действия API Яндекс Аудиторий (только GET): `audience_segments_list` —
   все сегменты пользователя (id, имя, тип, статус, размер, дата, владелец);

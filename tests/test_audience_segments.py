@@ -81,10 +81,10 @@ async def test_audience_no_token(monkeypatch, tmp_path):
 def test_audience_get_forces_ipv4_oauth():
     import directai_mcp.api.audience as api
 
-    src = inspect.getsource(api._get)
+    src = inspect.getsource(api)
     assert "AsyncHTTPTransport" in src
     assert 'local_address="0.0.0.0"' in src
-    assert '"OAuth " + token' in src or "'OAuth ' + token" in src or '"OAuth "' in src
+    assert '"OAuth " + token' in src
 
 
 @respx.mock

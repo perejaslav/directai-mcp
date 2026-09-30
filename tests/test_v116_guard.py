@@ -145,9 +145,11 @@ _OS_FUNCS = {"remove", "unlink", "rmdir", "rename", "replace"}
 _WRITE_MODES = {"w", "a", "x", "+", "w+", "a+", "x+", "r+", "wb", "ab", "xb",
                 "wb+", "ab+", "rb+"}
 # Модули, которым writes разрешены: init CLI, выгрузки отчётов, лог,
-# кеш discover, журнал записей. Других писателей в пакете быть не должно.
+# кеш discover, журнал записей, временный CSV с хешами Аудиторий (удаляется
+# в finally; только метаданные в журнале). Других писателей быть не должно.
 _MUTATING_ALLOWED = {"cli.py", "fmt.py", "log.py",
-                     "catalog/accounts.py", "safety/journal.py"}
+                     "catalog/accounts.py", "safety/journal.py",
+                     "catalog/audience_write.py"}
 
 
 def _sources() -> list[Path]:
@@ -290,7 +292,7 @@ def test_write_action_params_have_no_config_fields():
 def test_write_hooks_have_no_write_primitives():
     """prepare/apply/verify любого write-действия не пишут на диск."""
     writes = {n: a for n, a in ACTIONS.items() if a.mode == "write"}
-    assert len(writes) == 15
+    assert len(writes) == 17
     for name, act in writes.items():
         for hook in (act.prepare, act.apply, act.verify):
             assert hook is not None, name
