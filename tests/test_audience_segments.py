@@ -159,3 +159,33 @@ async def test_audience_401_403_clear_text_no_token_leak(
         )
         assert hint in out
         assert "aud-secret-xyz" not in out
+
+
+@respx.mock
+async def test_check_audience_not_configured_no_api_call(monkeypatch):
+    from directai_mcp.cli import _check_audience
+
+    route = respx.get(BASE).mock(
+        return_value=httpx.Response(200, json={"segments": [_seg()]})
+    )
+    monkeypatch.setattr(cfg, "get_audience_token", lambda login: None)
+    out = await _check_audience("agency-login", "main-token")
+    assert out == (
+        "Аудитории: не настроены "
+        "(необязательно: directai-mcp set-token --audience)"
+    )
+    assert not route.called
+
+
+@respx.mock
+async def test_check_audience_ok_with_separate_token(monkeypatch):
+    from directai_mcp.cli import _check_audience
+
+    respx.get(BASE).mock(
+        return_value=httpx.Response(
+            200, json={"segments": [_seg(7), _seg(9)]}
+        )
+    )
+    monkeypatch.setattr(cfg, "get_audience_token", lambda login: "aud-token")
+    out = await _check_audience("agency-login", "main-token")
+    assert out == "OK Аудитории: 2 сегментов"

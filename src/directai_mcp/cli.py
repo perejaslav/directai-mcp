@@ -180,14 +180,17 @@ async def _check_all(sandbox: bool) -> int:
 
 
 async def _check_audience(auth_login: str, main_token: str) -> str:
-    """Строка check по Аудиториям: отдельный токен → иначе основной."""
+    """Строка check по Аудиториям: только отдельный токен, в API без него не ходим."""
     from directai_mcp.api.audience import _get
     from directai_mcp.api.errors import AudienceError
     from directai_mcp.config import get_audience_token
 
-    token = get_audience_token(auth_login) or main_token
+    token = get_audience_token(auth_login)
     if not token:
-        return "Аудитории: нет токена (directai-mcp set-token --audience)"
+        return (
+            "Аудитории: не настроены "
+            "(необязательно: directai-mcp set-token --audience)"
+        )
     try:
         payload = await _get(token, "segments")
     except AudienceError as e:
