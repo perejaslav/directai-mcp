@@ -3,6 +3,7 @@
 import inspect
 
 import httpx
+import pytest
 import respx
 
 import directai_mcp.catalog.audience_segments as aud
@@ -189,3 +190,134 @@ async def test_check_audience_ok_with_separate_token(monkeypatch):
     monkeypatch.setattr(cfg, "get_audience_token", lambda login: "aud-token")
     out = await _check_audience("agency-login", "main-token")
     assert out == "OK Аудитории: 2 сегментов"
+
+
+def _load_script():
+    """Модуль scripts/audience_segments.py как его запустит человек."""
+    import importlib.util
+    from pathlib import Path
+
+    path = (
+        Path(__file__).resolve().parent.parent
+        / "scripts"
+        / "audience_segments.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "audience_segments_script", path
+    )
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _mock_script_cfg(monkeypatch, tmp_path):
+    settings = Settings(
+        auth_login="agency-login",
+        accounts={"m": AccountEntry(alias="m", login="agency-login")},
+        accounts_path=tmp_path / "accounts.toml",
+    )
+    monkeypatch.setattr(cfg, "load_settings", lambda *a, **k: settings)
+    monkeypatch.setattr(cfg, "get_token", lambda login: "main-token")
+    monkeypatch.setattr(cfg, "get_audience_token", lambda login: "aud-token")
+
+
+@respx.mock
+async def test_script_run_list_contains_segment(monkeypatch, tmp_path):
+    respx.get(BASE).mock(
+        return_value=httpx.Response(200, json={"segments": [_seg(7)]})
+    )
+    _mock_script_cfg(monkeypatch, tmp_path)
+    out = await _load_script()._run(None, "json")
+    assert "Buyers" in out
+    assert "7" in out
+
+
+@respx.mock
+async def test_script_run_get_by_id(monkeypatch, tmp_path):
+    respx.get(BASE).mock(
+        return_value=httpx.Response(
+            200, json={"segments": [_seg(7), _seg(9, name="Geo")]}
+        )
+    )
+    _mock_script_cfg(monkeypatch, tmp_path)
+    out = await _load_script()._run(9, "json")
+    assert "Geo" in out
+    assert "Buyers" not in out
+
+
+@respx.mock
+def test_script_main_list_end_to_end(monkeypatch, tmp_path, capsys):
+    respx.get(BASE).mock(
+        return_value=httpx.Response(200, json={"segments": [_seg(7)]})
+    )
+    _mock_script_cfg(monkeypatch, tmp_path)
+    rc = _load_script().main([])
+    out, _ = capsys.readouterr()
+    assert rc == 0
+    assert "Buyers" in out
+
+
+def test_script_unknown_action_clear_error():
+    with pytest.raises(RuntimeError, match="не найдено в реестре"):
+        _load_script()._resolve_action("no_such_action")
+
+
+def _write_test_home(tmp_path):
+    home = tmp_path / "dhome"
+    home.mkdir(exist_ok=True)
+    (home / "accounts.toml").write_text(
+        '[auth]\nlogin = "agency-login"\n\n'
+        '[aliases.m]\nlogin = "agency-login"\n',
+        encoding="utf-8",
+    )
+    return home
+
+
+def test_script_fresh_process_human_path(tmp_path):
+    """Путь человека целиком в свежем процессе (без импорта сервера заранее).
+
+    Старый код падал здесь с KeyError: main печатал
+    "Ошибка: 'audience_segments_list'", exit 1. Новый код резолвит действие
+    и упирается в API: онлайн — детерминированный 403 на dummy-токене
+    (read-only GET, секретов и побочек нет), офлайн — сетевая ошибка;
+    в обоих случаях exit 0 и префикс «Ошибка Аудиторий: ».
+    """
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    home = _write_test_home(tmp_path)
+    script = (
+        Path(__file__).resolve().parent.parent
+        / "scripts"
+        / "audience_segments.py"
+    )
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if key.lower() not in ("http_proxy", "https_proxy", "no_proxy")
+    }
+    env.update(
+        {
+            "DIRECTAI_HOME": str(home),
+            "DIRECTAI_TOKEN": "dummy-main",
+            "DIRECTAI_AUDIENCE_TOKEN": "dummy-aud",
+            "HTTP_PROXY": "http://127.0.0.1:9",
+            "HTTPS_PROXY": "http://127.0.0.1:9",
+        }
+    )
+    proc = subprocess.run(
+        [sys.executable, str(script)],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=120,
+        cwd=str(Path(__file__).resolve().parent.parent),
+        check=False,
+    )
+    combined = proc.stdout + proc.stderr
+    assert "'audience_segments_list'" not in combined
+    assert "Ошибка Аудиторий: " in combined
+    assert proc.returncode == 0

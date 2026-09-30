@@ -16,6 +16,8 @@ import argparse
 import asyncio
 import sys
 
+import directai_mcp.server  # noqa: F401 — регистрация действий в ACTIONS, как у сервера
+
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -37,7 +39,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 async def _run(segment_id: int | None, format: str) -> str:
-    from directai_mcp.catalog.registry import ACTIONS, Ctx
+    from directai_mcp.catalog.registry import Ctx
     from directai_mcp.config import data_dir, get_token, load_settings
 
     settings = load_settings()
@@ -47,15 +49,28 @@ async def _run(segment_id: int | None, format: str) -> str:
         data_dir=data_dir(),
     )
     if segment_id is None:
-        act = ACTIONS["audience_segments_list"]
+        act = _resolve_action("audience_segments_list")
         params = act.params.model_validate({"format": format})
     else:
-        act = ACTIONS["audience_segment_get"]
+        act = _resolve_action("audience_segment_get")
         params = act.params.model_validate(
             {"segment_id": segment_id, "format": format}
         )
     assert act.run is not None
     return await act.run(ctx, params)
+
+
+def _resolve_action(name: str):
+    """Действие из реестра с понятной ошибкой вместо голого KeyError."""
+    from directai_mcp.catalog.registry import ACTIONS
+
+    act = ACTIONS.get(name)
+    if act is None or act.run is None:
+        available = ", ".join(sorted(ACTIONS)) or "реестр пуст"
+        raise RuntimeError(
+            f"действие '{name}' не найдено в реестре. Доступны: {available}."
+        )
+    return act
 
 
 def main(argv: list[str] | None = None) -> int:
