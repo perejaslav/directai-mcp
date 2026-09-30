@@ -22,6 +22,7 @@
 - Таймаут поллинга — не ошибка: apply «applied», verify ok=False с нотой
   «ещё обрабатывается» → итог unverified + подсказка audience_segment_get.
   processing_failed → partial; few_data → applied (на синтетике нормально).
+- Ревью-фикс: apply сверяет sha256 файла и total с планом (TOCTOU-отказ без API/temp); сбой confirm возвращает id неподтверждённой загрузки с подсказкой.
 
 ## v1.2.5: Аудитории, этап 1 — токен + только чтение (экспериментально, ветка feat/audience-api, 30.09.2026)
 - Два read-действия API Яндекс Аудиторий (только GET): `audience_segments_list` —

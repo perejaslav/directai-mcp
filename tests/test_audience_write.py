@@ -11,6 +11,7 @@ import directai_mcp.config as cfg
 from directai_mcp.catalog.registry import ACTIONS, Ctx
 from directai_mcp.config import AccountEntry, Settings
 from directai_mcp.safety import journal as journal_mod
+from directai_mcp.safety.plans import Plan
 from directai_mcp.server import PLANS, do_apply_write, do_plan_write
 
 BASE = "https://api-audience.yandex.ru/v1/management"
@@ -239,6 +240,71 @@ async def test_poll_timeout_unverified(tmp_path, respx_mock):
     assert "статус unverified" in out
     assert "ещё обрабатывается" in out
     assert "audience_segment_get" in out
+
+
+async def test_apply_rejects_swapped_file(tmp_path, respx_mock):
+    path = _write_contacts(tmp_path)
+    out = await do_plan_write(
+        _ctx(tmp_path), "audience_segment_from_file",
+        {"file_path": path, "segment_name": "[TEST DirectAI] swap",
+         "content_type": "phone"},
+    )
+    pid = _plan_id(out)
+    from pathlib import Path as _Path
+
+    _Path(path).write_text(
+        "phone\n" + "\n".join(f"7911000{i:04d}" for i in range(150)) + "\n",
+        encoding="utf-8",
+    )
+    upload = respx_mock.post(UPLOAD).mock(
+        return_value=httpx.Response(200, json={"segment": {"id": 99}}))
+    out = await do_apply_write(_ctx(tmp_path), pid, True)
+    assert "статус failed" in out
+    assert "файл изменён после построения плана" in out
+    assert not upload.called
+
+
+async def test_apply_rejects_changed_total(tmp_path, respx_mock):
+    path = _write_contacts(tmp_path)
+    params = {"file_path": path, "segment_name": "[TEST DirectAI] total",
+              "content_type": "phone"}
+    pid = PLANS.put(Plan(
+        plan_id="", action="audience_segment_from_file",
+        account_login="agency-login", params=params,
+        before={"file_path": path,
+                "file_sha256": audw._sha256_file(path),
+                "content_type": "phone",
+                "segment_name": "[TEST DirectAI] total",
+                "read": 150, "valid": 150, "invalid": 0,
+                "duplicates": 0, "total": 999},
+        requests=[], preview="p",
+    ))
+    upload = respx_mock.post(UPLOAD).mock(
+        return_value=httpx.Response(200, json={"segment": {"id": 99}}))
+    out = await do_apply_write(_ctx(tmp_path), pid, True)
+    assert "статус failed" in out
+    assert "счётчик записей изменился" in out
+    assert not upload.called
+
+
+async def test_orphan_upload_id_in_failed(tmp_path, respx_mock):
+    path = _write_contacts(tmp_path)
+    respx_mock.post(UPLOAD).mock(
+        return_value=httpx.Response(200, json={"segment": {"id": 41}}))
+    respx_mock.post(f"{BASE}/segment/41/confirm").mock(
+        return_value=httpx.Response(500, text="boom"))
+    respx_mock.get(SEGMENTS).mock(
+        return_value=httpx.Response(200, json={"segments": []}))
+    out = await do_plan_write(
+        _ctx(tmp_path), "audience_segment_from_file",
+        {"file_path": path, "segment_name": "[TEST DirectAI] orphan",
+         "content_type": "phone"},
+    )
+    out = await do_apply_write(_ctx(tmp_path), _plan_id(out), True)
+    assert "статус failed" in out
+    assert "41" in out
+    assert "неподтвержд" in out
+    assert "7900000" not in out
 
 
 async def test_temp_file_removed(tmp_path, monkeypatch, respx_mock):

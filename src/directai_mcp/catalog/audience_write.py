@@ -416,6 +416,28 @@ async def _apply_from_file(ctx: Ctx, entry: AccountEntry, plan) -> dict:
             "lines": [f"валидных записей {result['total']}: нужно {MIN_RECORDS}."],
             "response": None,
         }
+    # TOCTOU: файл могли подменить между планом и apply — сверяем с тем,
+    # что подтвердил человек (только метаданные: sha256 и счётчик).
+    before = plan.before or {}
+    try:
+        current_sha = await asyncio.to_thread(_sha256_file, params["file_path"])
+    except OSError as exc:
+        return {"status": "failed", "lines": [f"файл: {exc}."], "response": None}
+    if current_sha != before.get("file_sha256"):
+        return {
+            "status": "failed",
+            "lines": [("файл изменён после построения плана, "
+                       "постройте план заново.")],
+            "response": None,
+        }
+    if result["total"] != before.get("total"):
+        return {
+            "status": "failed",
+            "lines": [(f"счётчик записей изменился после построения плана "
+                       f"({before.get('total')} → {result['total']}), "
+                       "постройте план заново.")],
+            "response": None,
+        }
     tmp_name: str | None = None
     try:
         # Файл живёт после close (загрузка + Windows-лок), удаление в finally.
@@ -440,9 +462,27 @@ async def _apply_from_file(ctx: Ctx, entry: AccountEntry, plan) -> dict:
             upload_id = await _upload_hashes(token, content)
         finally:
             content = b""
-        segment = await _confirm_segment(
-            token, upload_id, params["segment_name"]
-        )
+        segment = None
+        try:
+            segment = await _confirm_segment(
+                token, upload_id, params["segment_name"]
+            )
+        except AudienceError as exc:
+            # Сирота: загрузка создана, но не подтверждена. Не удаляем
+            # автоматически и не трогаем delete-guard — только id и подсказка.
+            return {
+                "status": "failed",
+                "lines": [
+                    f"Ошибка API Аудиторий: {exc}",
+                    (
+                        f"загрузка {upload_id} осталась неподтверждённой "
+                        "(сегмент создан, но не сохранён): проверьте её через "
+                        "audience_segment_get или удалите вручную в интерфейсе "
+                        "Аудиторий."
+                    ),
+                ],
+                "response": {"segment_id": upload_id, "confirmed": False},
+            }
         segment_id = int(segment.get("id") or upload_id)
         if params.get("wait_timeout_sec", 120):
             final, _ = await _poll_status(
