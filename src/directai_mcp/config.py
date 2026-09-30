@@ -14,6 +14,11 @@ TOKEN_ENV_VAR = "DIRECTAI_TOKEN"
 # поэтому Яндекс.Вебмастер живёт в отдельном приложении «для доступа к API»).
 KEYRING_SERVICE_WEBMASTER = "directai-mcp-webmaster"
 WEBMASTER_TOKEN_ENV_VAR = "DIRECTAI_WEBMASTER_TOKEN"
+# Этап 1 Аудиторий (экспериментально, ветка feat/audience-api): отдельный
+# токен по образцу Вебмастера — у приложений «для авторизации пользователей»
+# лимит 3 группы разрешений, основной токен перевыпускать нельзя.
+KEYRING_SERVICE_AUDIENCE = "directai-mcp-audience"
+AUDIENCE_TOKEN_ENV_VAR = "DIRECTAI_AUDIENCE_TOKEN"
 DEFAULT_AUTH_LOGIN = "agency-login"
 
 # Шаг 1.1-2: кеш обнаруженных кабинетов и его свежесть.
@@ -411,3 +416,19 @@ def get_webmaster_token(auth_login: str) -> str | None:
     import keyring
 
     return keyring.get_password(KEYRING_SERVICE_WEBMASTER, auth_login)
+
+
+def get_audience_token(auth_login: str) -> str | None:
+    """Отдельный токен Аудиторий или None (тогда вызывающий берёт основной).
+
+    По образцу Вебмастера: права Аудиторий не влезают в основное приложение
+    (лимит 3 группы разрешений), токен хранится под своим ключом
+    (`directai-mcp set-token --audience`). Токен никогда не логируется.
+    """
+
+    env_token = os.environ.get(AUDIENCE_TOKEN_ENV_VAR)
+    if env_token:
+        return env_token
+    import keyring
+
+    return keyring.get_password(KEYRING_SERVICE_AUDIENCE, auth_login)

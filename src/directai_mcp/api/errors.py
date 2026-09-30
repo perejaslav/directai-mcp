@@ -61,6 +61,23 @@ class DirectUnverifiedError(DirectError):
     """
 
 
+class AudienceError(Exception):
+    """Этапа 1 Аудиторий: ошибка чтения API Аудиторий. Токен не несёт."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
+
+def audience_hint(status: int) -> str:
+    if status == 401:
+        return "токен не принят — перевыпустите: directai-mcp set-token --audience"
+    if status == 403:
+        return "у приложения/токена нет прав Аудиторий (создание и чтение сегментов)"
+    if status == 404:
+        return "ресурс не найден (проверьте id сегмента)"
+    return ""
+
+
 def hint_for_code(code: int) -> str:
     if code == CODE_AUTH:
         return "check token: run `directai-mcp set-token`"

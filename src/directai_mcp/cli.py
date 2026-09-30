@@ -16,6 +16,7 @@ from directai_mcp.api.direct import DirectClient
 from directai_mcp.api.errors import DirectError
 from directai_mcp.config import (
     KEYRING_SERVICE,
+    KEYRING_SERVICE_AUDIENCE,
     KEYRING_SERVICE_WEBMASTER,
     ConfigError,
     TokenMissingError,
@@ -77,14 +78,25 @@ def cmd_init(home: Path | None = None) -> int:
     return 0
 
 
-def cmd_set_token(login: str | None = None, webmaster: bool = False) -> int:
+def cmd_set_token(
+    login: str | None = None,
+    webmaster: bool = False,
+    audience: bool = False,
+) -> int:
     """Masked token input, save to Windows Credential Manager."""
     target = data_dir()
     target.mkdir(parents=True, exist_ok=True)
     setup_logging(target)
 
-    service = KEYRING_SERVICE_WEBMASTER if webmaster else KEYRING_SERVICE
-    label = "Вебмастер" if webmaster else "основной"
+    if audience:
+        service = KEYRING_SERVICE_AUDIENCE
+        label = "Аудитории"
+    elif webmaster:
+        service = KEYRING_SERVICE_WEBMASTER
+        label = "Вебмастер"
+    else:
+        service = KEYRING_SERVICE
+        label = "основной"
 
     resolved_login = login
     if not resolved_login:
@@ -161,9 +173,29 @@ async def _check_all(sandbox: bool) -> int:
         print(line)
         if line.startswith("FAIL"):
             ok = False
+    print(await _check_audience(settings.auth_login, token))
     if sandbox:
         print("[SANDBOX]")
     return 0 if ok else 1
+
+
+async def _check_audience(auth_login: str, main_token: str) -> str:
+    """Строка check по Аудиториям: отдельный токен → иначе основной."""
+    from directai_mcp.api.audience import _get
+    from directai_mcp.api.errors import AudienceError
+    from directai_mcp.config import get_audience_token
+
+    token = get_audience_token(auth_login) or main_token
+    if not token:
+        return "Аудитории: нет токена (directai-mcp set-token --audience)"
+    try:
+        payload = await _get(token, "segments")
+    except AudienceError as e:
+        return f"FAIL Аудитории: {e}"
+    items = payload.get("segments") if isinstance(payload, dict) else None
+    if items is None:
+        return "FAIL Аудитории: нет поля `segments` в ответе"
+    return f"OK Аудитории: {len(items)} сегментов"
 
 
 def cmd_check(sandbox: bool = False) -> int:
@@ -250,6 +282,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="сохранить отдельный токен Вебмастера (из приложения «для доступа к API»)",
     )
+    st.add_argument(
+        "--audience",
+        action="store_true",
+        help="сохранить отдельный токен Аудиторий (экспериментально)",
+    )
 
     sub.add_parser("check", help="Clients.get + campaign count per account")
     sub.add_parser("serve", help="run MCP server over STDIO (step 2)")
@@ -268,7 +305,11 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "init":
         raise SystemExit(cmd_init())
     if args.command == "set-token":
-        raise SystemExit(cmd_set_token(args.login, webmaster=args.webmaster))
+        raise SystemExit(
+            cmd_set_token(
+                args.login, webmaster=args.webmaster, audience=args.audience
+            )
+        )
     if args.command == "check":
         raise SystemExit(cmd_check(sandbox=args.sandbox))
     if args.command == "probe":

@@ -13,6 +13,7 @@ from directai_mcp.api.direct import LAST_SEEN_UNITS
 from directai_mcp.catalog import accounts as accounts_mod
 from directai_mcp.catalog import adgroups as adgroups_mod
 from directai_mcp.catalog import ads as ads_mod
+from directai_mcp.catalog import audience_segments as audience_segments_mod
 from directai_mcp.catalog import audiences as audiences_mod
 from directai_mcp.catalog import bids as bids_mod
 from directai_mcp.catalog import campaigns as campaigns_mod
@@ -32,6 +33,7 @@ _ACTION_MODULES = (
     accounts_mod,
     adgroups_mod,
     ads_mod,
+    audience_segments_mod,
     audiences_mod,
     bids_mod,
     campaigns_mod,

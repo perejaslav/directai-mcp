@@ -52,6 +52,8 @@ EXPECTED = frozenset(
         "webmaster_hosts",
         "webmaster_summary",
         "webmaster_query",
+        "audience_segments_list",
+        "audience_segment_get",
     }
 )
 
@@ -61,4 +63,4 @@ def test_registry_has_all_actions():
 
 
 def test_registration_imports_referenced():
-    assert len(server_mod._ACTION_MODULES) == 15
+    assert len(server_mod._ACTION_MODULES) == 16
