@@ -106,6 +106,11 @@ class KeywordsListParams(GetActionParams):
     adgroup_ids: list[int] = Field(default_factory=list)
     keyword_ids: list[int] = Field(default_factory=list)
     show_negatives: bool = False
+    short_phrases: bool = Field(
+        default=False,
+        description=("Только display: отрезать фразе всё после первого "
+                     "' -'. В данных фраза всегда целиком."),
+    )
 
 
 @action(
@@ -200,7 +205,8 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
                     "_account": entry.login,
                     "Id": item.get("Id"),
                     "AdGroupId": item.get("AdGroupId"),
-                    "Keyword": clean_phrase(item.get("Keyword"), params.show_negatives),
+                    "Keyword": clean_phrase(item.get("Keyword"),
+                                            params.short_phrases),
                     "State": item.get("State"),
                     "Status": item.get("Status"),
                     "ServingStatus": item.get("ServingStatus"),

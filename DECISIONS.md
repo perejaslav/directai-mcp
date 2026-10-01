@@ -1,5 +1,17 @@
 # DECISIONS.md — отступления от SPEC и уточнения
 
+## v1.3.4: фразы целиком по умолчанию (01.10.2026)
+- `clean_phrase`: отрезание « -…» только при явном `short_phrases=true`
+  (новый display-параметр `keywords_list` и stats-базы); по умолчанию фраза
+  как в API. `show_negatives` больше не режет (legacy, совместимость вызовов).
+  Ярлык «Автотаргетинг» для `---autotargeting` сохранён (display-конвенция,
+  категории — отдельной колонкой; raw — с этапом Б).
+- Живая проверка: 31 фраза из 75 dump v2 были усечены
+  (внутрифразные минус-слова); список — в отчёте шага.
+- Тесты: инвертирован `test_criterion_cut_on_space_hyphen_only`,
+  + `test_keywords_full_phrase_by_default` (« -купить -бесплатно»).
+  Всего 474 passed, ruff чист (src, tests).
+
 ## v1.3.3: adgroups-колонки, counter goals_only, metrika_goals_list (01.10.2026)
 - `adgroups_list`: колонки NegativeKeywords («N фраз»), NegativeKeywordSharedSetIds
   и TrackingParams (имена — WSDL adgroups/get). Тест-инвариант v1120 обновлён.

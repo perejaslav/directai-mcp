@@ -115,3 +115,25 @@ def test_goals_only_param_schema():
     assert not ACTIONS["counter_check"].params.model_fields[
         "goals_only"].is_required()
     assert ACTIONS["metrika_goals_list"].mode == "read"
+
+
+async def test_keywords_full_phrase_by_default(respx_mock, tmp_path):
+    import httpx as _httpx
+
+    respx_mock.post(
+        "https://api.direct.yandex.com/json/v5/keywords").mock(
+        return_value=_httpx.Response(200, json={"result": {"Keywords": [
+            {"Id": 900000011, "AdGroupId": 900000010,
+             "Keyword": "эмаль -купить -бесплатно",
+             "State": "ON", "Status": "ACCEPTED",
+             "ServingStatus": "ELIGIBLE", "Bid": 90000001,
+             "ContextBid": 500000},
+        ]}}))
+    out = await ACTIONS["keywords_list"].run(
+        _ctx(tmp_path), ACTIONS["keywords_list"].params(
+            account="m", adgroup_ids=[900000010]))
+    assert "эмаль -купить -бесплатно" in out
+    out = await ACTIONS["keywords_list"].run(
+        _ctx(tmp_path), ACTIONS["keywords_list"].params(
+            account="m", adgroup_ids=[900000010], short_phrases=True))
+    assert "| эмаль |" in out

@@ -98,6 +98,9 @@ class StatsParams(BaseModel):
     fill_calendar: bool = True
     limit: int | None = None
     show_negatives: bool = False
+    # v1.3.4: отрезание « -…» только здесь (display); show_negatives больше
+    # не режет (legacy-поле для совместимости вызовов).
+    short_phrases: bool = False
     include_empty: bool = False
     save_as: Literal["csv", "md"] | None = None
     output: Literal["inline", "file"] = "inline"
@@ -882,9 +885,9 @@ def _period_dates(params: StatsParams) -> list[str] | None:
     return None
 
 
-def _clean_criterion(value: object, show_negatives: bool) -> object:
+def _clean_criterion(value: object, short_phrases: bool) -> object:
     """Alias kept for tests; logic lives in common.clean_phrase."""
-    return clean_phrase(value, show_negatives)
+    return clean_phrase(value, short_phrases)
 
 
 _GOAL_COL_RE = re.compile(
@@ -2257,7 +2260,7 @@ async def _run_report(
                     row["Autotargeting"] = text
             else:
                 row["Criterion"] = _clean_criterion(
-                    row["Criterion"], params.show_negatives
+                    row["Criterion"], params.short_phrases
                 )
     if name == "stats_keywords" and "Criterion" in columns:
         # v1.1.20: CleanCriterion — только CSV/JSON (в inline/MD агенты
@@ -2619,7 +2622,7 @@ async def _run_custom(ctx: Ctx, params: CustomParams) -> str:
     columns, rows = drop_roi(columns, rows)
     for row in rows:
         if "Criterion" in row:
-            row["Criterion"] = _clean_criterion(row["Criterion"], params.show_negatives)
+            row["Criterion"] = _clean_criterion(row["Criterion"], params.short_phrases)
     rows.sort(key=lambda r: to_float(r.get("Cost")) or -1.0, reverse=True)
     if params.include_empty:
         n_empty = count_empty_rows(rows)

@@ -48,15 +48,20 @@ def chunk(items: list, size: int):
         yield items[i : i + size]
 
 
-def clean_phrase(value: object, show_negatives: bool) -> object:
-    """Bare phrase by default (cut at first ' -'); '---autotargeting' label."""
+def clean_phrase(value: object, cut_suffix: bool = False) -> object:
+    """Bare label for autotargeting; suffix cut ONLY on explicit demand.
+
+    v1.3.4: по умолчанию фраза возвращается целиком, как в API
+    (dump v2 потерял минус-слова 30 фраз из 75). Отрезание « -…» —
+    только display и только при cut_suffix=true (параметр short_phrases).
+    """
     if not isinstance(value, str):
         return value
     if value == "---autotargeting":
         return "Автотаргетинг"
-    if show_negatives:
-        return value
-    return value.split(" -", 1)[0]
+    if cut_suffix:
+        return value.split(" -", 1)[0]
+    return value
 
 
 def goal_label(
