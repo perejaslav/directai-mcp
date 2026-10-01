@@ -19,7 +19,10 @@ from directai_mcp.catalog.registry import Ctx, action, write_action
 from directai_mcp.config import AccountEntry
 
 FIELDS = ["Id", "CampaignId", "Name", "Status", "ServingStatus", "RegionIds",
-          "RestrictedRegionIds", "Type"]
+          "RestrictedRegionIds", "Type",
+          # v1.3.3: минусы и tracking групп для dump (WSDL adgroups/get).
+          "NegativeKeywords", "NegativeKeywordSharedSetIds",
+          "TrackingParams"]
 
 
 class AdGroupsListParams(GetActionParams):
@@ -53,6 +56,19 @@ def _restricted(value: object) -> str:
     if not items or not isinstance(items, list):
         return "—"
     return ", ".join(str(i) for i in items)
+
+
+def _negatives_count(value: object) -> str:
+    """v1.3.3: NegativeKeywords {Items} -> «N фраз» или «—»."""
+    items = value.get("Items") if isinstance(value, dict) else value
+    if not items or not isinstance(items, list):
+        return "—"
+    return f"{len(items)} фраз"
+
+
+def _shared_ids(value: object) -> str:
+    """v1.3.3: NegativeKeywordSharedSetIds {Items} -> «id, ...» или «—»."""
+    return _restricted(value)
 
 
 @action(
@@ -142,7 +158,8 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
             for gid, text in payload.items():
                 auto[(login, gid)] = text
     columns = ["Id", "CampaignId", "Name", "Type", "Status", "ServingStatus",
-               "Regions", "Restricted", "Autotargeting"]
+               "Regions", "Restricted", "Negatives", "SharedSets", "Tracking",
+               "Autotargeting"]
     rows: list[dict] = []
     errors: list[str] = []
     errors.extend(auto_errors)
@@ -167,6 +184,11 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
                     "ServingStatus": item.get("ServingStatus"),
                     "Regions": _regions(item.get("RegionIds")),
                     "Restricted": _restricted(item.get("RestrictedRegionIds")),
+                    "Negatives": _negatives_count(
+                        item.get("NegativeKeywords")),
+                    "SharedSets": _shared_ids(
+                        item.get("NegativeKeywordSharedSetIds")),
+                    "Tracking": item.get("TrackingParams") or "—",
                     "Autotargeting": auto.get((entry.login, gid)),
                 }
             )

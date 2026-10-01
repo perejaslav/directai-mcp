@@ -200,7 +200,7 @@ Credential Manager (`directai-mcp`) или переменная `DIRECTAI_TOKEN`
 Порядок работы ИИ: `search_actions` → `describe_action` → `run_read`
 (чтение) или `plan_write` → показать вам → `apply_write` (запись).
 
-Чтение (41):
+Чтение (42):
 
 | Действие | Что делает |
 |---|---|
@@ -229,6 +229,7 @@ Credential Manager (`directai-mcp`) или переменная `DIRECTAI_TOKEN`
 | `changes_check` | Что менялось с даты |
 | `accounts_discover`, `accounts_check`, `accounts_balance` | Кабинеты: поиск, проверка доступа, баллы |
 | `counter_check` | Проверка счётчиков Метрики кампании |
+| `metrika_goals_list` | Цели счётчиков Метрики: id, название, тип (без статистики) |
 | `moderation_check` | Статусы модерации объявлений |
 | `webmaster_hosts`, `webmaster_summary`, `webmaster_query` | Вебмастер: сайты и подтверждение прав, ИКС и проблемы, произвольный read-ресурс API v4 |
 | `audience_segments_list`, `audience_segment_get` | Аудитории: сегменты пользователя (тип, статус, размер) |

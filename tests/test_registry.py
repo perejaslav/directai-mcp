@@ -46,6 +46,7 @@ EXPECTED = frozenset(
         "dictionaries_get",
         "changes_check",
         "counter_check",
+        "metrika_goals_list",
         "accounts_discover",
         "accounts_check",
         "accounts_balance",
