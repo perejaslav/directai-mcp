@@ -122,9 +122,53 @@ async def test_bids_forecast_auto_epk_note_no_error(tmp_path, respx_mock):
     out = await _run("keyword_bids_forecast", ctx,
                      {"account": "t", "campaign_id": 900000032})
     assert "прогноз Яндекса, не гарантия" in out
-    assert "ставками управляет стратегия" in out
+    assert "управляет стратегия" in out
     assert "без данных аукциона" in out
     assert "Ошибка" not in out.split("Примечание")[0] or "без данных" in out
+
+
+async def test_bids_forecast_serving_off_live_format(tmp_path, respx_mock):
+    """Живой формат 10.2026: ЕПК, Search=SERVING_OFF, Network=AVERAGE_CPC.
+
+    AuctionBids API отдаёт даже при SERVING_OFF — таблица заполнена,
+    пометка про отключение поиска, не ошибка.
+    """
+    respx_mock.post(f"{BASE}/keywordbids").mock(
+        return_value=_ok({
+            "KeywordBids": [
+                {"KeywordId": 900000041, "AdGroupId": 900000042, "CampaignId": 900000043,
+                 "ServingStatus": "ELIGIBLE",
+                 "Search": {"AuctionBids": {"AuctionBidItems": [
+                     {"TrafficVolume": 100, "Bid": 560200000, "Price": 138300000},
+                     {"TrafficVolume": 15, "Bid": 47600000, "Price": 28900000},
+                 ]}},
+                 "Network": {"Bid": 7000000}},
+            ]
+        })
+    )
+    respx_mock.post(f"{BASE}/keywords").mock(
+        return_value=_ok({"Keywords": [
+            {"Id": 900000041, "Keyword": "тестовая фраза", "State": "ON",
+             "Status": "ACCEPTED"},
+        ]})
+    )
+    respx_mock.post(f"{BASE_V501}/campaigns").mock(
+        return_value=_ok({"Campaigns": [
+            {"Id": 900000043, "Name": "test", "Type": "UNIFIED_CAMPAIGN",
+             "UnifiedCampaign": {"BiddingStrategy": {
+                 "Search": {"BiddingStrategyType": "SERVING_OFF"},
+                 "Network": {"BiddingStrategyType": "AVERAGE_CPC"}}}},
+        ]})
+    )
+    ctx = _ctx(tmp_path)
+    out = await _run("keyword_bids_forecast", ctx,
+                     {"account": "t", "campaign_id": 900000043})
+    assert "прогноз Яндекса, не гарантия" in out
+    assert "тестовая фраза" in out
+    assert "SERVING_OFF" in out
+    assert "AVERAGE_CPC" in out
+    assert "прогноз справочный" in out
+    assert "Фраз прочитано: 1" in out
 
 
 async def test_bids_forecast_pagination_no_loss(tmp_path, respx_mock):
@@ -234,6 +278,41 @@ async def test_phrases_forecast_full_cycle(tmp_path, respx_mock, monkeypatch):
     assert "окна пвх" in out
     assert "Итого по всем фразам" in out
     assert "удалён" in out
+
+
+async def test_phrases_forecast_live_positions_format(tmp_path, respx_mock, monkeypatch):
+    """Живой формат 10.2026: позиции P11..P24, CTR числом (знак % — рендер),
+    PremiumMax у фраз, у Common его нет."""
+    monkeypatch.setattr(forecast_mod, "FORECAST_POLL_INTERVAL", 0.01)
+    respx_mock.post(LIVE).mock(side_effect=[
+        _live_ok(900000103),
+        _live_ok([{"ForecastID": 900000103, "StatusForecast": "Done"}]),
+        _live_ok({
+            "Phrases": [
+                {"Phrase": "тестовая фраза", "Shows": 1160, "Clicks": 6,
+                 "FirstPlaceClicks": 6, "PremiumClicks": 115,
+                 "CTR": 0.78, "Min": 158.34, "Max": 165.25,
+                 "PremiumMin": 173.2, "PremiumMax": 720.88, "Currency": "RUB",
+                 "AuctionBids": [
+                     {"Position": "P11", "Bid": 720.88, "Price": 79.61},
+                     {"Position": "P21", "Bid": 165.25, "Price": 31.78},
+                 ]},
+            ],
+            "Common": {"Geo": "213", "Min": 158.34, "Max": 165.25,
+                       "PremiumMin": 173.2, "Shows": 1160, "Clicks": 6,
+                       "FirstPlaceClicks": 6, "PremiumClicks": 115},
+        }),
+        _live_ok(1),
+    ])
+    ctx = _ctx(tmp_path)
+    out = await _run("phrases_forecast", ctx,
+                     {"account": "t", "phrases": ["тестовая фраза"],
+                      "region_ids": [213]})
+    assert "P11: ставка 720.88, цена 79.61" in out
+    assert "P21: ставка 165.25, цена 31.78" in out
+    assert "0.78%" in out
+    assert "Итого по всем фразам" in out
+    assert "прогноз Яндекса, не гарантия" in out
 
 
 async def test_phrases_forecast_timeout_returns_id(tmp_path, respx_mock, monkeypatch):

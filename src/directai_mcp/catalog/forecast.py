@@ -50,15 +50,33 @@ def _estimate_bids_units(n: int | None) -> str:
     return base + f"; для ~{n} фраз ≈ {15 + per} баллов."
 
 
-def _strategy_note(strategy: dict) -> tuple[str, str]:
+def _strategy_note(strategy: dict) -> tuple[bool, str]:
+    """Живой формат (10.2026): Search=SERVING_OFF + Network=AVERAGE_CPC.
+
+    SERVING_OFF — не стратегия, а отключение показов: AuctionBids API при
+    этом всё равно отдаёт (вопреки рекомендации справки не запрашивать),
+    показываем справочно. Ручной поиск — HIGHEST_POSITION; ручные сети —
+    MAXIMUM_COVERAGE/MANUAL_CPM.
+    """
     search = (strategy.get("Search") or {}).get("BiddingStrategyType")
     network = (strategy.get("Network") or {}).get("BiddingStrategyType")
-    auto_search = search is not None and search != "HIGHEST_POSITION"
-    auto_net = network is not None and network not in ("MAXIMUM_COVERAGE", "MANUAL_CPM")
-    if auto_search or auto_net:
-        name = search or network or "автостратегия"
-        return True, f"ставками управляет стратегия ({name}), прогноз справочный"
-    return False, "ручная стратегия"
+    bits: list[str] = []
+    if search == "SERVING_OFF":
+        bits.append("показы на поиске отключены (SERVING_OFF), данные справочные")
+    elif search is not None and search != "HIGHEST_POSITION":
+        bits.append(
+            f"ставками на поиске управляет стратегия ({search}), прогноз справочный"
+        )
+    if network not in (None, "MAXIMUM_COVERAGE", "MANUAL_CPM"):
+        if network in ("SERVING_OFF", "NETWORK_DEFAULT"):
+            bits.append(f"показы в сетях: {network}, данные справочные")
+        else:
+            bits.append(
+                f"ставками в сетях управляет стратегия ({network}), прогноз справочный"
+            )
+    if not bits:
+        return False, "ручная стратегия"
+    return True, "; ".join(bits)
 
 
 async def _campaign_info(
