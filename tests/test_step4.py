@@ -36,22 +36,13 @@ def _keywords(items):
     return httpx.Response(200, json={"result": {"Keywords": items}})
 
 
-def test_store_rejects_used_and_expired():
-    store = PlanStore()
-    plan = Plan(
-        plan_id="",
-        action="a",
-        account_login="l",
-        params={},
-        before=None,
-        requests=[],
-        preview="p",
-    )
-    pid = store.put(plan)
-    assert store.take(pid) is not None
-    assert store.take(pid) is None
-    pid2 = store.put(
-        Plan(
+def test_store_rejects_used_and_expired(tmp_path):
+    import json
+
+    store = PlanStore(tmp_path / "plans")
+
+    def _fresh():
+        return Plan(
             plan_id="",
             action="a",
             account_login="l",
@@ -60,15 +51,23 @@ def test_store_rejects_used_and_expired():
             requests=[],
             preview="p",
         )
-    )
-    store._plans[pid2].created_at -= 10000.0
+
+    pid = store.put(_fresh())
+    assert store.take(pid) is not None
+    assert store.take(pid) is None
+    pid2 = store.put(_fresh())
+    path = tmp_path / "plans" / f"{pid2}.json"
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    doc["created_at"] -= 10000.0
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    assert store.status_of(pid2) == "expired"
     assert store.take(pid2) is None
 
 
 async def test_apply_unknown_plan_id(tmp_path):
     ctx = _ctx(tmp_path)
     out = await do_apply_write(ctx, "deadbeef1234")
-    assert "неизвестен, просрочен или уже применён" in out
+    assert "не найден" in out
 
 
 async def test_warnings_gate(tmp_path, respx_mock):

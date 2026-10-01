@@ -62,7 +62,7 @@ def check_file(path, numeric, words, text):
     try:
         with open(path, encoding="utf-8", errors="strict") as fh:
             content = fh.read()
-    except Exception:
+    except Exception:  # noqa: BLE001 — бинарник/кодировка: пропускаем файл
         return 0
     hits = 0
     for rx in numeric:

@@ -144,4 +144,4 @@ async def test_modifiers_delete_missing_blocked(tmp_path, respx_mock):
 async def test_apply_unknown_plan_id(tmp_path):
     ctx = _ctx(tmp_path)
     out = await do_apply_write(ctx, "deadbeef1234")
-    assert "неизвестен, просрочен или уже применён" in out
+    assert "не найден" in out

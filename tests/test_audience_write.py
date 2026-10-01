@@ -506,7 +506,7 @@ async def test_apply_twice_rejected(tmp_path, respx_mock):
     out = await do_apply_write(_ctx(tmp_path), pid, True)
     assert "статус applied" in out
     out = await do_apply_write(_ctx(tmp_path), pid, True)
-    assert "неизвестен, просрочен или уже применён" in out
+    assert "уже применён" in out
 
 
 def _load_write_script():

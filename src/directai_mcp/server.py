@@ -64,7 +64,14 @@ from directai_mcp.config import (
 from directai_mcp.log import setup_logging
 from directai_mcp.safety import journal as journal_mod
 from directai_mcp.safety.guard import GuardBlocked, check_write, guard_active
-from directai_mcp.safety.plans import Plan, PlanStore
+from directai_mcp.safety.plans import (
+    REASON_EXPIRED,
+    REASON_NOT_FOUND,
+    REASON_OK,
+    REASON_USED,
+    Plan,
+    PlanStore,
+)
 
 log = logging.getLogger(__name__)
 
@@ -113,6 +120,23 @@ def _points(login: str) -> str:
 
 
 PLANS = PlanStore()
+
+_STORES: dict[str, PlanStore] = {}
+
+
+def plans_for(ctx: Ctx) -> PlanStore:
+    """Plan store for this context (shared on disk by all processes)."""
+    from directai_mcp.config import data_dir as _data_dir
+
+    root = ctx.data_dir if ctx.data_dir is not None else _data_dir()
+    key = str(root)
+    store = _STORES.get(key)
+    if store is None:
+        from directai_mcp.safety.plans import plans_dir_for
+
+        store = PlanStore(plans_dir_for(root))
+        _STORES[key] = store
+    return store
 
 
 def accounts_table(settings) -> str:
@@ -346,7 +370,7 @@ async def do_plan_write(ctx: Ctx, name: str, params: dict) -> str:
         preview=prep["preview"],
         warnings=prep.get("warnings", []),
     )
-    plan_id = PLANS.put(plan)
+    plan_id = plans_for(ctx).put(plan)
     from directai_mcp.catalog.common import net_summary
 
     lines = [
@@ -373,15 +397,38 @@ async def do_apply_write(
     """Shared apply_write body (also used by tests)."""
     from directai_mcp.api.errors import DirectError, DirectUnverifiedError
 
-    plan = PLANS.peek(plan_id)
+    store = plans_for(ctx)
+    plan = store.peek(plan_id)
     if plan is None:
-        return f"Ошибка: plan_id {plan_id} неизвестен, просрочен или уже применён."
+        reason = store.status_of(plan_id)
+        if reason == REASON_EXPIRED:
+            return (
+                f"Ошибка: plan_id {plan_id} просрочен "
+                "(TTL 15 минут): пересоберите план через plan_write."
+            )
+        if reason == REASON_USED:
+            return (
+                f"Ошибка: plan_id {plan_id} уже применён: "
+                "повторное применение запрещено."
+            )
+        if reason == REASON_NOT_FOUND:
+            return (
+                f"Ошибка: plan_id {plan_id} не найден: "
+                "проверьте id и каталог планов."
+            )
+        return f"Ошибка: plan_id {plan_id} недоступен ({reason})."
     if plan.warnings and not acknowledge_warnings:
         return (
             f"Ошибка: план {plan_id} содержит предупреждения; "
             f"повторите с acknowledge_warnings=true."
         )
-    plan = PLANS.take(plan_id)
+    plan, reason = store.take_detailed(plan_id)
+    if plan is None or reason != REASON_OK:
+        # Гонку выиграл другой процесс: план уже уходит в работу.
+        return (
+            f"Ошибка: plan_id {plan_id} уже применён: "
+            "повторное применение запрещено."
+        )
     assert plan is not None
     act = ACTIONS.get(plan.action)
     assert act is not None and act.apply is not None and act.verify is not None
@@ -421,6 +468,9 @@ async def do_apply_write(
     if verify_result.get("display_empty") and status == "applied":
         status = "partial"
     summary = "; ".join(apply_result.get("lines", [])) + " | " + note
+    store.mark_terminal(
+        plan.plan_id, "applied" if status in ("applied", "partial") else "failed"
+    )
     conn = journal_mod.connect(ctx.data_dir or data_dir())
     journal_id = journal_mod.insert(
         conn,

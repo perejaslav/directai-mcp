@@ -567,6 +567,48 @@ def check_audience() -> CheckResult:
     )
 
 
+def check_plans_dir() -> CheckResult:
+    """j. Каталог планов: доступен на запись (общий для всех процессов)."""
+    from directai_mcp.config import ConfigError, data_dir, load_settings
+    from directai_mcp.safety.plans import plans_dir_for
+
+    try:
+        settings = load_settings()
+        home = (
+            settings.accounts_path.parent
+            if settings.accounts_path is not None
+            else data_dir()
+        )
+    except ConfigError as e:
+        return CheckResult(
+            id="j",
+            name="Каталог планов",
+            status=STATUS_WARN,
+            detail=f"конфиг не прочитан ({e}) — каталог не проверен",
+            hint="сначала починить конфиг (проверка e)",
+        )
+    target = plans_dir_for(home)
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+        probe = target / ".doctor-write-test"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+    except OSError as e:
+        return CheckResult(
+            id="j",
+            name="Каталог планов",
+            status=STATUS_FAIL,
+            detail=f"каталог недоступен на запись: {target}: {e}",
+            hint="проверить права на каталог данных (%USERPROFILE%\\.directai\\plans)",
+        )
+    return CheckResult(
+        id="j",
+        name="Каталог планов",
+        status=STATUS_OK,
+        detail=f"запись доступна: {target}",
+    )
+
+
 def run_doctor(
     skip_api: bool = False, preinstall: bool = False
 ) -> tuple[list[CheckResult], int]:
@@ -598,6 +640,7 @@ def run_doctor(
         check_api(skip_api=skip_api),
         check_hermes(),
         check_audience(),
+        check_plans_dir(),
     ]
     if any(r.status == STATUS_FAIL for r in results):
         return results, 2

@@ -1,4 +1,4 @@
-"""Connection doctor v1.7.0: проверки a–i, коды возврата, --json, секреты."""
+"""Connection doctor v1.7.0: проверки a–j, коды возврата, --json, секреты."""
 
 import json
 
@@ -258,6 +258,21 @@ def test_audience_enabled_warn(monkeypatch, tmp_path):
     assert doctor.check_audience().status == "WARN"
 
 
+# --- j. Каталог планов ---
+
+
+def test_plans_dir_ok(monkeypatch, tmp_path):
+    _home(monkeypatch, tmp_path)
+    r = doctor.check_plans_dir()
+    assert r.id == "j" and r.status == "OK"
+
+
+def test_plans_dir_unwritable_fail(monkeypatch, tmp_path):
+    _home(monkeypatch, tmp_path)
+    (tmp_path / "plans").write_text("not a dir", encoding="utf-8")
+    assert doctor.check_plans_dir().status == "FAIL"
+
+
 # --- коды возврата и --json ---
 
 
@@ -296,9 +311,9 @@ def test_json_schema_no_secrets(monkeypatch, tmp_path, capsys):
     assert payload["schema"] == 1
     assert payload["overall"] in ("ok", "warn", "fail")
     assert payload["preinstall"] is False
-    assert len(payload["checks"]) == 9
+    assert len(payload["checks"]) == 10
     ids = sorted([c.get("id") for c in payload["checks"]])
-    assert ids == ["a", "b", "c", "d", "e", "f", "g", "h", "i"]
+    assert ids == ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]
     assert all(c.get("status") in ("OK", "WARN", "FAIL") for c in payload["checks"])
 
 
@@ -314,6 +329,7 @@ def test_doctor_all_mocked_exit_zero(monkeypatch):
     monkeypatch.setattr(d, "check_api", lambda skip_api=False: _result("OK"))
     monkeypatch.setattr(d, "check_hermes", lambda *a, **k: _result("OK"))
     monkeypatch.setattr(d, "check_audience", lambda *a, **k: _result("OK"))
+    monkeypatch.setattr(d, "check_plans_dir", lambda *a, **k: _result("OK"))
     results, code = d.run_doctor()
     assert code == 0
     assert format_json(results, code).startswith("{")
@@ -337,6 +353,7 @@ def test_doctor_exe_warn_downgrades_file_lock_ok(monkeypatch):
     monkeypatch.setattr(d, "check_api", lambda skip_api=False: _result("OK"))
     monkeypatch.setattr(d, "check_hermes", lambda *a, **k: _result("OK"))
     monkeypatch.setattr(d, "check_audience", lambda *a, **k: _result("OK"))
+    monkeypatch.setattr(d, "check_plans_dir", lambda *a, **k: _result("OK"))
     results, code = d.run_doctor()
     assert code == 1
     assert results[3].status == "WARN"
@@ -364,6 +381,7 @@ def test_doctor_preinstall_flag_reaches_checks(monkeypatch):
     monkeypatch.setattr(d, "check_api", lambda skip_api=False: _result("OK"))
     monkeypatch.setattr(d, "check_hermes", lambda *a, **k: _result("OK"))
     monkeypatch.setattr(d, "check_audience", lambda *a, **k: _result("OK"))
+    monkeypatch.setattr(d, "check_plans_dir", lambda *a, **k: _result("OK"))
     d.run_doctor(preinstall=True)
     assert seen == {"c": True, "d": True}
 

@@ -133,7 +133,14 @@ async def test_blocked_write_creates_no_plan(respx_mock, tmp_path):
         "account": "m", "delete_ids": [MOD_ID]})
     assert "Заблокировано защитой" in out
     assert len(PLANS) == before  # план не создан
-    assert not [p for p in tmp_path.iterdir() if p.name != "accounts.toml"]
+    leftover = (
+        [p for p in (tmp_path / "plans").iterdir() if p.suffix == ".json"]
+        if (tmp_path / "plans").exists()
+        else []
+    )
+    assert leftover == []  # файлов планов тоже нет
+    assert not [p for p in tmp_path.iterdir()
+                if p.name not in ("accounts.toml", "plans")]
 
 
 # --- 2) конфиг guard недостижим для записи из MCP ----------------------------
@@ -147,10 +154,14 @@ _WRITE_MODES = {"w", "a", "x", "+", "w+", "a+", "x+", "r+", "wb", "ab", "xb",
 # Модули, которым writes разрешены: init CLI, выгрузки отчётов, лог,
 # кеш discover, журнал записей, временный CSV с хешами Аудиторий (удаляется
 # в finally; только метаданные в журнале). common.py — только dump-конверт
-# в явно переданный dump_dir (как fmt.py в reports/). Других писателей нет.
+# в явно переданный dump_dir (как fmt.py в reports/). v1.8.1: safety/plans.py —
+# общее файловое хранилище планов (<data_dir>/plans, один файл на план);
+# doctor.py — только пробный файл .doctor-write-test (создаётся и удаляется).
+# Других писателей нет.
 _MUTATING_ALLOWED = {"cli.py", "fmt.py", "log.py",
                      "catalog/accounts.py", "safety/journal.py",
-                     "catalog/audience_write.py", "catalog/common.py"}
+                     "catalog/audience_write.py", "catalog/common.py",
+                     "safety/plans.py", "doctor.py"}
 
 
 def _sources() -> list[Path]:
@@ -208,12 +219,14 @@ def test_package_writes_only_known_artifacts():
 
 
 def test_guard_config_never_written():
-    """Каталог safety/ (кроме журнала) и config.py не пишут вообще."""
+    """Каталог safety/ (кроме журнала и хранилища планов) и config.py
+    не пишут вообще."""
     mutating = _mutating_modules()
-    for name in ("safety/guard.py", "safety/rules.py", "safety/plans.py",
+    for name in ("safety/guard.py", "safety/rules.py",
                  "safety/__init__.py", "config.py", "server.py"):
         assert name not in mutating, f"{name} умеет писать на диск"
-    assert "safety/journal.py" in mutating  # журнал — единственная запись
+    assert "safety/journal.py" in mutating  # журнал — запись
+    assert "safety/plans.py" in mutating  # v1.8.1: общее хранилище планов
 
 
 def test_safety_modules_have_no_config_paths():
