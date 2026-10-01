@@ -75,10 +75,23 @@ def clean_phrase(value: object, cut_suffix: bool = False) -> object:
     return value
 
 
+SERVICE_GOALS = {12: "вовлечённые сессии", 13: "все приоритетные цели"}
+
+
 def goal_label(
     gid: object, names: dict[str, str], counters: dict[str, int] | None = None
 ) -> str:
-    """v1.1.5 п.3: 'Имя (id[, счётчик N])' — счётчик только у явно помеченных."""
+    """v1.1.5 п.3: 'Имя (id[, счётчик N])' — счётчик только у явно помеченных.
+
+    A5: GoalId 12/13 — служебные, не цели из справочника:
+    12 = вовлечённые сессии, 13 = все приоритетные цели.
+    """
+    try:
+        gid_int = int(gid)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        gid_int = None
+    if gid_int in SERVICE_GOALS:
+        return f"{SERVICE_GOALS[gid_int]} (GoalId={gid_int}, служебное)"
     text = str(gid)
     name = (names or {}).get(text, "")
     mark = (counters or {}).get(text)

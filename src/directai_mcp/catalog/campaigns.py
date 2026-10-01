@@ -472,7 +472,10 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
 @action(
     "campaigns_get",
     "read",
-    "Полные настройки кампаний по id",
+    "Полные настройки кампаний по id. Поле ENABLE_AREA_OF_INTEREST_TARGETING "
+    "только читается (отменено Яндексом 31.08.2026): значение YES/NO — "
+    "неуправляемое поле, см. campaign_setting_notices. "
+    "Турбо-блоки, clients.site и CPM-видео через API недоступны.",
     (
         "настройки кампании",
         "campaigns",
@@ -562,6 +565,8 @@ async def _get(ctx: Ctx, params: BaseModel) -> str:
     errors: list[str] = []
     details: list[str] = []
     raw: list[dict] = []
+    notices_all: list[dict] = []
+    from directai_mcp.catalog.notices import notices_for_settings as _notices
     for entry, payload in results:
         if isinstance(payload, DirectError):
             errors.append(f"⚠ {entry.login}: {payload.human_message()}")
@@ -610,6 +615,10 @@ async def _get(ctx: Ctx, params: BaseModel) -> str:
                     _detail(entry.login, item, body_detail, names,
                             ctx.settings.goal_counters)
                 )
+            _body = _block(item) or {}
+            for _n in _notices(_body.get("Settings")):
+                notices_all.append({"campaign_id": item.get("Id"),
+                                    **_n})
     display = (["_account"] if len(results) > 1 else []) + columns
     _dump_fields = {
         "FieldNames": GET_FIELDS,
@@ -640,6 +649,8 @@ async def _get(ctx: Ctx, params: BaseModel) -> str:
         dump_params=params.model_dump(),
         dump_raw={"campaigns_get": [
             dict(i, linked_to_campaign=True) for i in raw]},
+        dump_extra=({"campaign_setting_notices": notices_all}
+                    if notices_all else None),
         dump_fields=_dump_fields,
         dump_tally=tally,
         dump_logins=[e.login for e, _ in results],
@@ -647,6 +658,12 @@ async def _get(ctx: Ctx, params: BaseModel) -> str:
     )
     if details:
         out += "\n\n" + "\n\n".join(details)
+    if notices_all:
+        out += "\n\nПометки настроек (campaign_setting_notices, неуправляемые поля):\n"
+        for _n in notices_all:
+            out += (f"- кампания {_n.get('campaign_id')}: "
+                    f"{_n.get('field')} ({_n.get('status')}, с {_n.get('since')}): "
+                    f"{_n.get('message')} Текущее: {_n.get('value')}.\n")
     return out + f"\n\n{version_footer()}"
 
 
@@ -849,6 +866,10 @@ class CampaignsUpdateParams(GetActionParams):
     strategy: dict | None = None
     # Исключённые площадки (добавление к существующим, с дедупом).
     excluded_sites: list[str] | None = None
+    # A1: любые Settings с неуправляемым полем отклоняются до API.
+    settings: list[dict] | None = None
+    # A9: TrackingParams с валидацией макросов (предупреждение, не блок).
+    tracking_params: str | None = None
     # v1.1.34: daily_budget УДАЛЁН — бюджеты запрещены политикой везде.
     # Передача daily_budget блокируется guard до API
     # («Изменение бюджета запрещено политикой»).
@@ -989,6 +1010,19 @@ async def _prepare_campaigns_update(
     ctx: Ctx, entry: AccountEntry, params: BaseModel
 ) -> dict:
     assert isinstance(params, CampaignsUpdateParams)
+    from directai_mcp.catalog.notices import is_read_only
+    if params.settings:
+        for s in params.settings:
+            if isinstance(s, dict) and is_read_only(str(s.get("Option"))):
+                raise ValueError(
+                    f"поле {s.get('Option')} только читается "
+                    f"(campaign_setting_notices, read_only): запись запрещена."
+                )
+    track_warnings: list[str] = []
+    if params.tracking_params is not None:
+        from directai_mcp.catalog.tracking import validate_tracking_macros
+        _rec, _warns = validate_tracking_macros(params.tracking_params)
+        track_warnings.extend(_warns)
     given: dict = {}
     if params.end_date is not None:
         given["EndDate"] = params.end_date
@@ -998,9 +1032,12 @@ async def _prepare_campaigns_update(
         given["TextCampaign"] = {"BiddingStrategy": params.strategy}
     if params.excluded_sites is not None:
         given["_excluded_sites_add"] = list(params.excluded_sites)
+    if params.tracking_params is not None:
+        given["TextCampaign"] = {**(given.get("TextCampaign") or {}),
+                                 "TrackingParams": params.tracking_params}
     if not given:
         raise ValueError(
-            "укажите end_date, negatives, strategy или excluded_sites.")
+            "укажите end_date, negatives, strategy, excluded_sites или tracking_params.")
     client = ctx.direct()
     try:
         found = await client.get_all(
@@ -1061,11 +1098,13 @@ async def _prepare_campaigns_update(
         for body in bodies:
             body["ExcludedSites"] = {"Items": given["_excluded_merged"][body["Id"]]}
     desc = []
-    warnings: list[str] = []
+    warnings: list[str] = list(track_warnings)
     if params.end_date is not None:
         desc.append(f"EndDate → {params.end_date}")
     if params.negatives is not None:
         desc.append(f"минус-фразы → {len(params.negatives)} шт")
+    if params.tracking_params is not None:
+        desc.append("tracking_params обновлены (макросы проверены)")
     excl_desc = {}
     if params.excluded_sites is not None:
         for cid in params.campaign_ids:
@@ -1176,8 +1215,9 @@ async def _verify_campaigns_updated(ctx: Ctx, entry: AccountEntry, plan) -> dict
 
 write_action(
     "campaigns_update",
-    "Изменение кампаний: даты, минусы, исключения площадок "
-    "(бюджеты/стратегия запрещены политикой)",
+    "Изменение кампаний: даты, минусы, исключения площадок, tracking_params "
+    "(бюджеты/стратегия запрещены политикой; "
+    "ENABLE_AREA_OF_INTEREST_TARGETING только читается — запись отклоняется)",
     ("изменить кампанию", "campaigns", "update", "настройки кампании",
      "исключить площадки", "excluded"),
     CampaignsUpdateParams,

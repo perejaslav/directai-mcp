@@ -476,6 +476,10 @@ async def _prepare_adgroups_update(
     lines = []
     warnings: list[str] = []
     for item in params.groups:
+        if item.tracking_params is not None:
+            from directai_mcp.catalog.tracking import validate_tracking_macros
+            _rec, _warns = validate_tracking_macros(item.tracking_params)
+            warnings.extend(f"группа {item.id}: {_w}" for _w in _warns)
         body: dict = {"Id": item.id}
         desc = []
         if item.name is not None:

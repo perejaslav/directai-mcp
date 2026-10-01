@@ -365,6 +365,18 @@ def precheck(action: str, params: dict) -> str | None:
         return "переименование существующей кампании запрещено при защите."
     if action == "ads_state" and params.get("operation") == "moderate":
         return "модерация запрещена в режиме защиты."
+    if action == "campaigns_update" and params.get("settings"):
+        # A1: неуправляемое поле — до обращения к API.
+        try:
+            from directai_mcp.catalog.notices import is_read_only
+            for s in params["settings"] or []:
+                if isinstance(s, dict) and is_read_only(str(s.get("Option"))):
+                    return (
+                        f"поле {s.get('Option')} только читается "
+                        f"(campaign_setting_notices, read_only): запись запрещена."
+                    )
+        except ImportError:
+            pass
     if is_budget_write(action, params):
         # v1.1.34: бюджеты запрещены везде, до обращения к API.
         # Ловит и удалённый daily_budget (сырые параметры, до валидации).

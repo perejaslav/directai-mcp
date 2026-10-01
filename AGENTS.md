@@ -131,3 +131,9 @@ Get-CimInstance Win32_Process -Filter 'Name="python.exe"' |
 
 Правила записи (бюджеты/стратегию не менять, guard не выключать,
 запись только через план с подтверждением) — `README.md §1.1, §5–6`.
+
+## 8. Знания Директа (пакет A1–A11 + B2)
+
+См. README §10 «Знания Директа». Правило: поля из `campaign_setting_notices`
+(реестр `src/directai_mcp/catalog/notices.py`) не писать никогда —
+отклонять до обращения к API.

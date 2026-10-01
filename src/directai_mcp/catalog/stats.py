@@ -640,6 +640,38 @@ def effective_attribution(ctx: Ctx, params: StatsParams) -> list[str]:
     return list(params.attribution) or list(ctx.settings.attribution) or ["AUTO"]
 
 
+# A6: модели атрибуции. Метрика с 25.06.2026 перевела legacy-модели
+# в cross-device (lastsign -> cross_device_last_significant и др.);
+# у Директа свои enum (FCCD, LC, LSCCD, AUTO), прямого соответствия нет.
+DIRECT_ATTRIBUTION_MODELS = ("FCCD", "LC", "LSCCD", "AUTO")
+METRIKA_LEGACY_TO_CROSS_DEVICE = {
+    "lastsign": "cross_device_last_significant",
+    "lastsign_direct": "cross_device_last_significant_direct",
+    "firstsign": "cross_device_first_significant",
+    "automatic": "cross_device_automatic",
+}
+
+
+def attribution_info(ctx: Ctx, params) -> dict:
+    """A6: {requested, effective, source} для stats_* и stats_compare.
+
+    Reports API фактическую модель не возвращает — не выдумываем:
+    effective=None, source='not_reported'.
+    """
+    requested = list(getattr(params, "attribution", []) or []) \
+        or list(ctx.settings.attribution) or ["AUTO"]
+    return {"requested": requested, "effective": None,
+            "source": "not_reported"}
+
+
+def attribution_line(ctx: Ctx, params) -> str:
+    """Однострочный блок атрибуции для ответов stats_*."""
+    info = attribution_info(ctx, params)
+    req = ",".join(info["requested"])
+    return (f"Атрибуция: requested={req}, effective=null, "
+            f"source={info['source']} (фактическую модель API не возвращает).")
+
+
 def extract_campaign_goals(item: dict, include_engaged: bool = False) -> set[int]:
     """Key goal ids from Campaigns.get item (PriorityGoals + strategy).
 
@@ -1951,6 +1983,7 @@ def _context(
             f"атрибуция: {attribution}, целей: {len(goals)} ({src_label}), "
             f"режим: {params.goals_mode}{suffix}."
         )
+        text += " " + attribution_line(ctx, params)
         if mixed:
             text += mixed
         # v1.1.19: дубли визитов между целями + primary.

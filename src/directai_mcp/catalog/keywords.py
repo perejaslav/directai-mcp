@@ -67,7 +67,9 @@ def autotargeting_summary(settings: dict | None) -> str | None:
 
 
 async def autotargeting_by_group(
-    client, login: str, adgroup_ids: list[int],
+    client,
+    login: str,
+    adgroup_ids: list[int],
     collect: list | None = None,
     tally: dict | None = None,
 ) -> dict[int, str | None]:
@@ -113,15 +115,20 @@ class KeywordsListParams(GetActionParams):
     show_negatives: bool = False
     short_phrases: bool = Field(
         default=False,
-        description=("Только display: отрезать фразе всё после первого "
-                     "' -'. В данных фраза всегда целиком."),
+        description=(
+            "Только display: отрезать фразе всё после первого "
+            "' -'. В данных фраза всегда целиком."
+        ),
     )
 
 
 @action(
     "keywords_list",
     "read",
-    "Фразы группы или кампании: ставки, статусы",
+    "Фразы группы или кампании: ставки, статусы. "
+    "Директ сам добавляет минус-слова в пересекающиеся фразы группы: "
+    "по чтению автоматические и ручные не различить, "
+    "фразы с минус-хвостами не считать ошибкой без анализа структуры группы.",
     ("фразы", "keywords", "ключи", "фраза", "keyword"),
     KeywordsListParams,
 )
@@ -145,8 +152,10 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
                 await client.get_all(
                     "keywords",
                     dict(
-                        {"SelectionCriteria": {"CampaignIds": ids},
-                         "FieldNames": FIELDS},
+                        {
+                            "SelectionCriteria": {"CampaignIds": ids},
+                            "FieldNames": FIELDS,
+                        },
                         **auto_extra,
                     ),
                     entry.login,
@@ -216,8 +225,7 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
                     "_account": entry.login,
                     "Id": item.get("Id"),
                     "AdGroupId": item.get("AdGroupId"),
-                    "Keyword": clean_phrase(item.get("Keyword"),
-                                            params.short_phrases),
+                    "Keyword": clean_phrase(item.get("Keyword"), params.short_phrases),
                     "State": item.get("State"),
                     "Status": item.get("Status"),
                     "ServingStatus": item.get("ServingStatus"),
@@ -250,8 +258,7 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
         dump_tag=params.dump_tag,
         dump_action="keywords_list",
         dump_params=params.model_dump(),
-        dump_raw={"keywords_list": [
-            dict(i, linked_to_campaign=True) for i in raw]},
+        dump_raw={"keywords_list": [dict(i, linked_to_campaign=True) for i in raw]},
         dump_fields=dict({"FieldNames": FIELDS}, **auto_extra),
         dump_tally=tally,
         dump_logins=[e.login for e in entries],
@@ -433,25 +440,66 @@ def _validate_kw_text(text: str) -> None:
     if norm == "---autotargeting":
         return
     if len(norm) > MAX_KW_LEN:
-        raise ValueError(
-            f"фраза «{norm[:40]}…»: длина {len(norm)} > {MAX_KW_LEN}.")
+        raise ValueError(f"фраза «{norm[:40]}…»: длина {len(norm)} > {MAX_KW_LEN}.")
     words = _kw_content_words(norm)
     if len(words) > MAX_KW_WORDS:
-        raise ValueError(
-            f"фраза «{norm}»: {len(words)} слов (лимит {MAX_KW_WORDS}).")
+        raise ValueError(f"фраза «{norm}»: {len(words)} слов (лимит {MAX_KW_WORDS}).")
     for word in words:
         if len(word) > MAX_KW_WORD_LEN:
             raise ValueError(
-                f"фраза «{norm}»: слово «{word[:20]}…» длиннее "
-                f"{MAX_KW_WORD_LEN}.")
+                f"фраза «{norm}»: слово «{word[:20]}…» длиннее {MAX_KW_WORD_LEN}."
+            )
+
+
+def _strip_op(token: str) -> str:
+    """Снять операторы минус-фразы: ведущий '-', !, +, кавычки, скобки."""
+    t = token.strip().removeprefix("-")
+    t = t.lstrip("!+")
+    t = t.strip("\"'[]()")
+    t = t.lstrip("!+").strip("\"'[]()")
+    return t
 
 
 def _kw_blocked_by_minus(phrase_words: set[str], minus: str) -> str | None:
-    """Эвристика: слова минуса целиком внутри слов фразы → показ заблокирован."""
-    tokens = [t.lstrip("-!+\"'").rstrip("\"'").strip("()").casefold()
-              for t in str(minus or "").split()]
-    minus_words = {t for t in tokens if t}
-    if minus_words and minus_words <= phrase_words:
+    """Эвристика блокировки показа с учётом операторов (A3).
+
+    Правила: "..." — запрос только из этих слов (точное равенство наборов);
+    [] — порядок слов учитывается (подпоследовательность по порядку);
+    ! — точная словоформа (строгое равенство, без лемм);
+    + — обязательность (снимается для сравнения);
+    полное пересечение минуса с ключом отменяет действие минуса (None).
+    """
+    raw = str(minus or "").strip()
+    if not raw:
+        return None
+    quoted = raw.startswith('"') or raw.strip().lstrip("-").startswith('"')
+    ordered = "[" in raw and "]" in raw
+    tokens = [_strip_op(t).casefold() for t in raw.split()]
+    minus_words = [t for t in tokens if t]
+    if not minus_words:
+        return None
+    phrase = [w.casefold() for w in phrase_words]
+    phrase_set = set(phrase)
+    minus_set = set(minus_words)
+    # Полное пересечение: слова минуса == слова фразы → минус не действует.
+    if minus_set == phrase_set:
+        return None
+    if quoted:
+        if minus_set == phrase_set:
+            return None
+        # Кавычки: блокирует, только если все слова минуса внутри фразы
+        # и длина совпадает с точностью до порядка (строже обычного).
+        if minus_set <= phrase_set and len(minus_words) == len(phrase):
+            return str(minus)
+        return None
+    if ordered:
+        # Порядок: на множестве слов порядок фразы неизвестен —
+        # проверяем вхождение (консервативно блокирует); точный порядок
+        # проверяется в dump_to_xlsx.neg_match по тексту фразы.
+        if minus_set <= phrase_set:
+            return str(minus)
+        return None
+    if minus_set <= phrase_set:
         return str(minus)
     return None
 
@@ -479,8 +527,10 @@ async def _prepare_keywords_add(
     try:
         groups = await client.get_all(
             "adgroups",
-            {"SelectionCriteria": {"Ids": [params.adgroup_id]},
-             "FieldNames": ["Id", "CampaignId", "NegativeKeywords"]},
+            {
+                "SelectionCriteria": {"Ids": [params.adgroup_id]},
+                "FieldNames": ["Id", "CampaignId", "NegativeKeywords"],
+            },
             entry.login,
             "AdGroups",
         )
@@ -490,18 +540,22 @@ async def _prepare_keywords_add(
         group_neg = [str(p) for p in _items(groups[0].get("NegativeKeywords"))]
         camps = await client.get_all(
             "campaigns",
-            {"SelectionCriteria": {"Ids": [campaign_id]},
-             "FieldNames": ["Id", "NegativeKeywords"],
-             "TextCampaignFieldNames": ["BiddingStrategy"],
-             "UnifiedCampaignFieldNames": ["BiddingStrategy"]},
+            {
+                "SelectionCriteria": {"Ids": [campaign_id]},
+                "FieldNames": ["Id", "NegativeKeywords"],
+                "TextCampaignFieldNames": ["BiddingStrategy"],
+                "UnifiedCampaignFieldNames": ["BiddingStrategy"],
+            },
             entry.login,
             "Campaigns",
         )
         camp = camps[0] if camps else {}
         existing = await client.get_all(
             "keywords",
-            {"SelectionCriteria": {"AdGroupIds": [params.adgroup_id]},
-             "FieldNames": ["Id", "Keyword"]},
+            {
+                "SelectionCriteria": {"AdGroupIds": [params.adgroup_id]},
+                "FieldNames": ["Id", "Keyword"],
+            },
             entry.login,
             "Keywords",
         )
@@ -518,23 +572,28 @@ async def _prepare_keywords_add(
             if k.bid < MIN_KW_BID:
                 raise ValueError(
                     f"фраза «{k.text}»: ставка {k.bid} ₽ "
-                    f"ниже минимума {MIN_KW_BID:.2f} ₽.")
+                    f"ниже минимума {MIN_KW_BID:.2f} ₽."
+                )
             if search_type != "HIGHEST_POSITION":
                 raise ValueError(
                     f"фраза «{k.text}»: Bid только для ручной стратегии "
-                    f"(поиск: {search_type}).")
+                    f"(поиск: {search_type})."
+                )
         if k.context_bid is not None:
             if k.context_bid < MIN_KW_BID:
                 raise ValueError(
                     f"фраза «{k.text}»: ставка сети {k.context_bid} ₽ "
-                    f"ниже минимума {MIN_KW_BID:.2f} ₽.")
+                    f"ниже минимума {MIN_KW_BID:.2f} ₽."
+                )
             if network_type not in ("MAXIMUM_COVERAGE", "MANUAL_CPM"):
                 raise ValueError(
                     f"фраза «{k.text}»: ContextBid только при независимом "
-                    f"управлении ставками в сетях (сети: {network_type}).")
+                    f"управлении ставками в сетях (сети: {network_type})."
+                )
     # v1.1.35: дедуп — внутри пачки и с существующими фразами группы.
-    have = {_norm_negative(i.get("Keyword")) for i in existing
-            if isinstance(i, dict)} - {""}
+    have = {
+        _norm_negative(i.get("Keyword")) for i in existing if isinstance(i, dict)
+    } - {""}
     seen: set[str] = set()
     dupes: list[str] = []
     fresh: list = []
@@ -547,7 +606,8 @@ async def _prepare_keywords_add(
             fresh.append(k)
     if dupes:
         warnings.append(
-            "дубли пропущены (API их не сохраняет): " + ", ".join(dupes) + ".")
+            "дубли пропущены (API их не сохраняет): " + ", ".join(dupes) + "."
+        )
     if not fresh:
         raise ValueError("нечего добавлять: все фразы — дубли существующих.")
     # v1.1.35: пересечение с минусами кампании/группы — предупреждение.
@@ -559,7 +619,8 @@ async def _prepare_keywords_add(
             if hit:
                 warnings.append(
                     f"«{k.text}»: минус-фраза «{hit}» заблокирует показ "
-                    "(эвристика: все слова минуса внутри фразы).")
+                    "(эвристика: все слова минуса внутри фразы)."
+                )
                 break
     if any(t.strip() == "---autotargeting" for t in texts):
         # Docs keywords/add: all targeting categories enabled by default.
