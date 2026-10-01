@@ -83,6 +83,7 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
     if not params.campaign_ids and not params.adgroup_ids:
         return "Ошибка: укажите campaign_ids или adgroup_ids."
     mark = "[ПЕСОЧНИЦА] " if ctx.sandbox else ""
+    tally: dict = {}
 
     async def fetch(entry: AccountEntry, client):
         items: list[dict] = []
@@ -97,6 +98,7 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
                     # v5 отдаёт устаревший TEXT_AD_GROUP (проба живьём).
                     # Write-подготовки/проверки ниже остаются на v5.
                     "v501",
+                    tally=tally,
                 )
             )
         if params.adgroup_ids:
@@ -110,6 +112,7 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
                     entry.login,
                     "AdGroups",
                     "v501",
+                    tally=tally,
                 )
             )
         return items
@@ -119,6 +122,7 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
     # v1.1.20: настройки автотаргетинга групп (один Keywords.get на кабинет).
     auto: dict[tuple[str, int], str | None] = {}
     auto_errors: list[str] = []
+    auto_raw: list[dict] = []
     group_ids: dict[str, list[int]] = {}
     for entry, payload in results:
         if isinstance(payload, DirectError):
@@ -137,9 +141,12 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
         client = ctx.direct()
         try:
             try:
-                return entry.login, await autotargeting_by_group(
-                    client, entry.login, group_ids[entry.login]
+                collected: list[dict] = []
+                text = await autotargeting_by_group(
+                    client, entry.login, group_ids[entry.login],
+                    collect=collected, tally=tally,
                 )
+                return entry.login, (text, collected)
             except DirectError as e:
                 return entry.login, e
         finally:
@@ -155,12 +162,15 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
                 f"⚠ {login}: автотаргетинг: {payload.human_message()}"
             )
         else:
-            for gid, text in payload.items():
-                auto[(login, gid)] = text
+            text, collected = payload
+            auto_raw.extend(collected)
+            for gid, summary in text.items():
+                auto[(login, gid)] = summary
     columns = ["Id", "CampaignId", "Name", "Type", "Status", "ServingStatus",
                "Regions", "Restricted", "Negatives", "SharedSets", "Tracking",
                "Autotargeting"]
     rows: list[dict] = []
+    raw: list[dict] = []
     errors: list[str] = []
     errors.extend(auto_errors)
     for entry, payload in results:
@@ -168,6 +178,7 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
             errors.append(f"⚠ {entry.login}: {payload.human_message()}")
             continue
         assert isinstance(payload, list)
+        raw.extend(payload)
         for item in payload:
             try:
                 gid = int(item["Id"])
@@ -206,6 +217,31 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
         output=params.output,
         format=params.format,
         account=params.account,
+        dump_dir=params.dump_dir,
+        dump_tag=params.dump_tag,
+        dump_action="adgroups_list",
+        dump_params=params.model_dump(),
+        dump_raw={
+            "adgroups_list": [
+                dict(i, linked_to_campaign=True) for i in raw],
+            "keywords_autotargeting": [
+                dict(i, linked_to_campaign=True) for i in auto_raw],
+        },
+        dump_fields={
+            "FieldNames": FIELDS,
+            "AutotargetingKeywords": {
+                "FieldNames": ["Id", "AdGroupId", "Keyword"],
+                "AutotargetingSettingsCategoriesFieldNames": [
+                    "Exact", "Narrow", "Alternative", "Accessory",
+                    "Broader"],
+                "AutotargetingSettingsBrandOptionsFieldNames": [
+                    "WithoutBrands", "WithAdvertiserBrand",
+                    "WithCompetitorsBrand"],
+            },
+        },
+        dump_tally=tally,
+        dump_logins=[e.login for e in entries],
+        dump_scope="campaign",
     )
 
 

@@ -47,7 +47,7 @@ def test_ads_fetch_sends_all_subfields(monkeypatch, tmp_path):
 
     async def fake(ctx, account_value, fn):
         class Client:
-            async def get_all(self, service, params, login, key):
+            async def get_all(self, service, params, login, key, **kw):
                 seen.append(params)
                 return []
 
@@ -56,7 +56,7 @@ def test_ads_fetch_sends_all_subfields(monkeypatch, tmp_path):
 
         entry = AccountEntry(alias="m", login="agency-login")
         await fn(entry, Client())
-        return [(entry, ([], {}, {}, {}))]
+        return [(entry, ([], {}, {}, {}, [], []))]
 
     monkeypatch.setattr(ads_mod, "map_accounts", fake)
     asyncio.run(ACTIONS["ads_list"].run(

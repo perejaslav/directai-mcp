@@ -103,6 +103,7 @@ async def _section(
 async def _list(ctx: Ctx, params: BaseModel) -> str:
     assert isinstance(params, ExtensionsListParams)
     mark = "[ПЕСОЧНИЦА] " if ctx.sandbox else ""
+    tally: dict = {}
 
     async def fetch(entry: AccountEntry, client):
         set_ids = list(params.sitelink_set_ids)
@@ -123,6 +124,7 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
                 },
                 entry.login,
                 "Ads",
+                tally=tally,
             )
             for ad in ads:
                 for key in ("TextAd", "ResponsiveAd"):
@@ -140,6 +142,7 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
             | {"FieldNames": ["Id", "Sitelinks"]},
             entry.login,
             "SitelinksSets",
+            tally=tally,
         )
         extensions = await client.get_all(
             "adextensions",
@@ -154,6 +157,7 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
             },
             entry.login,
             "AdExtensions",
+            tally=tally,
         )
         images: list[dict] = []
         if hashes or params.ad_ids or params.image_hashes:
@@ -167,6 +171,7 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
                 | {"FieldNames": ["AdImageHash", "Name", "Type", "Associated"]},
                 entry.login,
                 "AdImages",
+                tally=tally,
             )
         return sitelink_sets, extensions, images
 
@@ -176,11 +181,17 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
     site_rows: list[dict] = []
     ext_rows: list[dict] = []
     img_rows: list[dict] = []
+    raw_sets: list[dict] = []
+    raw_exts: list[dict] = []
+    raw_imgs: list[dict] = []
     for entry, payload in results:
         if isinstance(payload, DirectError):
             errors.append(f"⚠ {entry.login}: {payload.human_message()}")
             continue
         sets, exts, images = payload
+        raw_sets.extend(sets)
+        raw_exts.extend(exts)
+        raw_imgs.extend(images)
         for s in sets:
             for link in s.get("Sitelinks") or []:
                 row = {
@@ -239,6 +250,60 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
         parts.append(f"## {title}\n\n{section}")
     if errors:
         parts.append("\n".join(errors))
+    if params.dump_dir:
+        from directai_mcp.catalog.common import write_dump_sections
+
+        scoped = bool(params.ad_ids or params.image_hashes
+                      or params.sitelink_set_ids or params.extension_ids)
+        parts.append(write_dump_sections(
+            ctx,
+            params.dump_dir,
+            "extensions_list",
+            params.account,
+            params.model_dump(),
+            {
+                "extensions_sitelinks": {
+                    "columns": acc + ["SetId", "Title", "Href",
+                                      "Description"],
+                    "display_rows": site_rows,
+                    "raw_items": [
+                        dict(s, linked_to_campaign=scoped)
+                        for s in raw_sets],
+                },
+                "extensions_callouts": {
+                    "columns": acc + ["Id", "Type", "Status", "Text"],
+                    "display_rows": ext_rows,
+                    "raw_items": [
+                        dict(e, linked_to_campaign=scoped)
+                        for e in raw_exts],
+                },
+                "extensions_images": {
+                    "columns": acc + ["Hash", "Name", "Type", "Associated"],
+                    "display_rows": img_rows,
+                    "raw_items": [
+                        dict(i, linked_to_campaign=scoped)
+                        for i in raw_imgs],
+                },
+            },
+            {"Ads": {"FieldNames": ["Id"],
+                      "TextAdFieldNames": [
+                          "SitelinkSetId", "AdImageHash", "AdExtensions"],
+                      "ResponsiveAdFieldNames": [
+                          "SitelinkSetId", "AdExtensions"]},
+             "SitelinksSets": {"FieldNames": ["Id", "Sitelinks"]},
+             "AdExtensions": {
+                 "FieldNames": ["Id", "Type", "Status", "Associated"],
+                 "CalloutFieldNames": ["CalloutText"]},
+             "AdImages": {"FieldNames": ["AdImageHash", "Name", "Type",
+                                         "Associated"]}},
+            tally,
+            [e.login for e in entries],
+            "campaign" if scoped else "cabinet",
+            list(errors),
+            len(site_rows) > 20 or len(ext_rows) > 20
+            or len(img_rows) > 20,
+            dump_tag=params.dump_tag,
+        ))
     return "\n\n".join(parts)
 
 

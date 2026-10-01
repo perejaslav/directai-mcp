@@ -1,5 +1,31 @@
 # DECISIONS.md — отступления от SPEC и уточнения
 
+## v1.4.0: файловый конверт для dump (этап Б ТЗ, 01.10.2026)
+- Новые параметры всех read-действий: `dump_dir` (папка сессии) и `dump_tag`
+  (суффикс). При `dump_dir` пишется детерминированный `<NN>_<action>[_<tag>].json`:
+  `{envelope_version, action, params, account, account_login, api_version,
+  requested_field_names, fetched_at, pages_fetched, pagination_complete,
+  truncated, units, warnings, sections: {имя: {columns, display_rows,
+  raw_items}}}` + `manifest.json` (seq, sha256) + `describe_<action>.json`
+  (один раз). В общий `reports/` в dump-режиме не пишется.
+- `items` (raw): объекты API как есть — micros, enum, null, вложенность;
+  единственное преобразование — ID-ключи `*Id(s)` int→str (иначе ошибка 7).
+  `_cut` и склейки — только в `display_rows`. Деньги не трогаем вообще.
+- Пагинация честная: `DirectClient.get_all/call` пишут `tally` (pages,
+  versions, complete по факту выхода из цикла); пустой tally →
+  `pagination_complete: null` + warning (не default true).
+- `linked_to_campaign`: audiences-списки — по привязкам Target;
+  images — по явному выбору (ad_ids/hashes/ids); feeds/strategies/turbo/
+  businesses — по явным ids; bare-вызовы → `scope: "cabinet"`, false.
+- `audiences_list`/`extensions_list`: в dump-режиме один файл с секциями;
+  обычный режим без изменений (2/3 файла). `counter_check`: секции
+  counters/goals + display-MD; `metrika_goals_list` — как все.
+- Живая проверка: конверт campaigns_get/ads_list(+archived) — NN-имена,
+  manifest+sha256, describe-файлы, raw micros, string-ID, `requested_field_names`.
+- Тесты: `tests/test_v140_envelope.py` (6: raw/ID/деньги/фразы, два вызова,
+  truncated, linked-флаги, scope cabinet, схема params). Всего 480 passed,
+  ruff чист (src, tests).
+
 ## v1.3.4: фразы целиком по умолчанию (01.10.2026)
 - `clean_phrase`: отрезание « -…» только при явном `short_phrases=true`
   (новый display-параметр `keywords_list` и stats-базы); по умолчанию фраза

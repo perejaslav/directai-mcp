@@ -146,10 +146,11 @@ _WRITE_MODES = {"w", "a", "x", "+", "w+", "a+", "x+", "r+", "wb", "ab", "xb",
                 "wb+", "ab+", "rb+"}
 # Модули, которым writes разрешены: init CLI, выгрузки отчётов, лог,
 # кеш discover, журнал записей, временный CSV с хешами Аудиторий (удаляется
-# в finally; только метаданные в журнале). Других писателей быть не должно.
+# в finally; только метаданные в журнале). common.py — только dump-конверт
+# в явно переданный dump_dir (как fmt.py в reports/). Других писателей нет.
 _MUTATING_ALLOWED = {"cli.py", "fmt.py", "log.py",
                      "catalog/accounts.py", "safety/journal.py",
-                     "catalog/audience_write.py"}
+                     "catalog/audience_write.py", "catalog/common.py"}
 
 
 def _sources() -> list[Path]:

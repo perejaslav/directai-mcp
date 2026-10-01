@@ -123,6 +123,8 @@ class _AudParams(BaseModel):
     )
     output: Literal["inline", "file"] = "inline"
     format: Literal["json", "md", "csv"] = "json"
+    dump_dir: str | None = None
+    dump_tag: str | None = None
 
 
 class AudienceSegmentsListParams(_AudParams):
@@ -166,6 +168,17 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
         money_cols=(),
         output=params.output,
         format=params.format,
+        dump_dir=params.dump_dir,
+        dump_tag=params.dump_tag,
+        dump_action="audience_segments_list",
+        dump_params=params.model_dump(),
+        dump_raw={"audience_segments_list": [
+            dict(s, linked_to_campaign=False) for s in items]},
+        dump_fields={"GET": ["segments"]},
+        dump_tally={"pages": 1, "versions": ["audience-v1"],
+                    "complete": True},
+        dump_logins=[],
+        dump_scope="cabinet",
     )
 
 
@@ -219,4 +232,15 @@ async def _one(ctx: Ctx, params: BaseModel) -> str:
         money_cols=(),
         output=params.output,
         format=params.format,
+        dump_dir=params.dump_dir,
+        dump_tag=params.dump_tag,
+        dump_action="audience_segment_get",
+        dump_params=params.model_dump(),
+        dump_raw={"audience_segment_get": [
+            dict(found, linked_to_campaign=False)]},
+        dump_fields={"GET": ["segments"], "filter": ["segment_id"]},
+        dump_tally={"pages": 1, "versions": ["audience-v1"],
+                    "complete": True},
+        dump_logins=[],
+        dump_scope="cabinet",
     )

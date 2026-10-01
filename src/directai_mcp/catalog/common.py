@@ -34,6 +34,17 @@ class GetActionParams(BaseModel):
     )
     output: Literal["inline", "file"] = "inline"
     format: Literal["json", "md", "csv"] = "json"
+    dump_dir: str | None = Field(
+        default=None,
+        description=("v1.4.0: папка сессии dump — файл пишется как "
+                     "<NN>_<action>.json с конвертом (raw + manifest), "
+                     "а не в общий reports/."),
+    )
+    dump_tag: str | None = Field(
+        default=None,
+        description=("v1.4.0: суффикс имени файла в dump_dir "
+                     "(напр. 'archived' для повторного вызова)."),
+    )
 
     @field_validator("limit")
     @classmethod
@@ -88,6 +99,92 @@ def micros_to_rubles(value: object) -> Decimal | None:
         return Decimal(int(value)) / 1_000_000
     except (TypeError, ValueError):
         return None
+
+
+_ID_KEY_RE = re.compile(r"(^|_)(id|ids)$", re.IGNORECASE)
+
+
+def str_ids_display(row: dict) -> dict:
+    """v1.4.0: ID-подобные int-значения строки -> str (ТЗ: все ID строками).
+
+    Только ключи Id/Ids/*Id/*Ids (не трогает деньги, счётчики, BidModifier).
+    """
+    out = dict(row)
+    for key, value in out.items():
+        if isinstance(value, int) and not isinstance(value, bool) \
+                and _ID_KEY_RE.search(str(key)):
+            out[key] = str(value)
+    return out
+
+
+def str_ids_deep(value: object) -> object:
+    """v1.4.0: рекурсивная версия str_ids_display для raw-объектов API."""
+    if isinstance(value, dict):
+        out = {}
+        for key, item in value.items():
+            item = str_ids_deep(item)
+            if isinstance(item, int) and not isinstance(item, bool) \
+                    and _ID_KEY_RE.search(str(key)):
+                item = str(item)
+            out[key] = item
+        return out
+    if isinstance(value, list):
+        return [str_ids_deep(item) for item in value]
+    return value
+
+
+def save_envelope(dump_dir: str | Path, file_name: str,
+                  envelope: dict) -> tuple[Path, str]:
+    """v1.4.0: детерминированный JSON-конверт (ensure_ascii=False, UTF-8)."""
+    import hashlib
+    import json as _json
+
+    path = Path(dump_dir)
+    path.mkdir(parents=True, exist_ok=True)
+    target = path / file_name
+    text = _json.dumps(envelope, ensure_ascii=False, indent=1,
+                       sort_keys=True, default=str)
+    target.write_text(text + "\n", encoding="utf-8")
+    digest = hashlib.sha256(target.read_bytes()).hexdigest()
+    return target, digest
+
+
+def append_manifest(dump_dir: str | Path, entry: dict) -> tuple[Path, int]:
+    """v1.4.0: дописать запись в manifest.json; вернуть (путь, seq)."""
+    import json as _json
+
+    path = Path(dump_dir)
+    path.mkdir(parents=True, exist_ok=True)
+    manifest = path / "manifest.json"
+    items: list = []
+    if manifest.exists():
+        try:
+            items = _json.loads(manifest.read_text(encoding="utf-8"))
+            assert isinstance(items, list)
+        except (ValueError, AssertionError):
+            items = []
+    seq = len(items) + 1
+    entry = dict(entry, seq=seq)
+    items.append(entry)
+    manifest.write_text(
+        _json.dumps(items, ensure_ascii=False, indent=1, sort_keys=True)
+        + "\n",
+        encoding="utf-8")
+    return manifest, seq
+
+
+def manifest_seq(dump_dir: str | Path) -> int:
+    """v1.4.0: следующий порядковый номер в manifest.json (NN имен)."""
+    import json as _json
+
+    manifest = Path(dump_dir) / "manifest.json"
+    if not manifest.exists():
+        return 1
+    try:
+        items = _json.loads(manifest.read_text(encoding="utf-8"))
+        return len(items) + 1 if isinstance(items, list) else 1
+    except ValueError:
+        return 1
 
 
 def summarize(
@@ -242,7 +339,7 @@ def staleness_warning() -> str | None:
 _GEO_CACHE: dict[str, list[dict]] = {}
 
 
-async def geo_regions(ctx: Ctx) -> list[dict]:
+async def geo_regions(ctx: Ctx, tally: dict | None = None) -> list[dict]:
     """GeoRegions dictionary with per-process cache (shared by actions)."""
     from directai_mcp.api.direct import DirectClient
 
@@ -250,12 +347,18 @@ async def geo_regions(ctx: Ctx) -> list[dict]:
         client = DirectClient(token=ctx.token, sandbox=ctx.sandbox)
         try:
             result = await client.call(
-                "dictionaries", "get", {"DictionaryNames": ["GeoRegions"]}, None
+                "dictionaries", "get", {"DictionaryNames": ["GeoRegions"]}, None,
+                tally=tally,
             )
         finally:
             await client.aclose()
         regions = result.get("GeoRegions", [])
         _GEO_CACHE["GeoRegions"] = regions if isinstance(regions, list) else []
+    elif tally is not None:
+        # Кеш: ответ известен полным (Dictionaries.get — один ответ без
+        # страниц), новых запросов не было.
+        tally["complete"] = True
+        tally.setdefault("versions", ["v5"])
     return _GEO_CACHE["GeoRegions"]
 
 
@@ -302,6 +405,139 @@ async def map_accounts(
     return list(await asyncio.gather(*(one(e) for e in entries)))
 
 
+def write_dump_sections(
+    ctx: Ctx,
+    dump_dir: str,
+    dump_action: str,
+    account: str | None,
+    params_dict: dict,
+    sections: dict[str, dict],
+    field_names: dict,
+    tally: dict | None,
+    logins: list,
+    scope: str | None,
+    warnings: list[str],
+    truncated: bool,
+    dump_tag: str | None = None,
+) -> str:
+    """v1.4.0: конверт с произвольными секциями + manifest + describe.
+
+    sections: {имя: {"columns": [...], "display_rows": [...],
+                     "raw_items": [...]}} — ID нормализуются здесь.
+    """
+    import datetime
+    import json as _json
+    from pathlib import Path as _Path
+
+    import directai_mcp
+    from directai_mcp.catalog.registry import ACTIONS  # lazy: без цикла
+
+    seq = manifest_seq(dump_dir)
+    stem = f"{seq:02d}_{dump_action}"
+    if dump_tag:
+        stem += f"_{dump_tag}"
+    file_name = stem + ".json"
+    tally = tally or {}
+    versions = tally.get("versions", [])
+    net = ctx.net
+    norm_sections = {}
+    for sec_name, sec in sections.items():
+        norm_sections[sec_name] = {
+            "columns": sec.get("columns", []),
+            "display_rows": [str_ids_display(r)
+                             for r in sec.get("display_rows", [])],
+            "raw_items": [str_ids_deep(i)
+                          for i in sec.get("raw_items", [])],
+        }
+    envelope = {
+        "envelope_version": 1,
+        "action": dump_action,
+        "params": params_dict,
+        "account": account or "all",
+        "account_login": logins[0] if len(logins) == 1 else list(logins),
+        "api_version": versions[0] if len(versions) == 1 else versions,
+        "requested_field_names": field_names,
+        "fetched_at": datetime.datetime.now().astimezone().isoformat(
+            timespec="seconds"),
+        "pages_fetched": tally.get("pages", 0),
+        "pagination_complete": tally.get("complete"),
+        "truncated": truncated,
+        "units": {
+            "spent": net.units_used,
+            "rests": {k: list(v) for k, v in net.rests.items()},
+        },
+        "warnings": list(warnings),
+        "sections": norm_sections,
+    }
+    if not tally.get("pages") and tally.get("complete") is not True:
+        envelope["warnings"].append(
+            "нет данных пагинации: вызовы API не зафиксированы tally")
+    path, digest = save_envelope(dump_dir, file_name, envelope)
+    describe_path = _Path(dump_dir) / f"describe_{dump_action}.json"
+    if not describe_path.exists():
+        act = ACTIONS.get(dump_action)
+        if act is not None:
+            desc = {
+                "action": act.name,
+                "mode": act.mode,
+                "summary": act.summary,
+                "params_schema": act.params.model_json_schema(),
+                "directai_version": directai_mcp.__version__,
+            }
+            describe_path.write_text(
+                _json.dumps(desc, ensure_ascii=False, indent=1,
+                            sort_keys=True, default=str) + "\n",
+                encoding="utf-8")
+    manifest, _ = append_manifest(dump_dir, {
+        "action": dump_action,
+        "params": params_dict,
+        "file": file_name,
+        "sha256": digest,
+        "fetched_at": envelope["fetched_at"],
+        "pagination_complete": envelope["pagination_complete"],
+        "truncated": truncated,
+        **({"scope": scope} if scope else {}),
+    })
+    return f"Dump-конверт: {path} (manifest: {manifest})."
+
+
+def _dump_envelope_line(
+    ctx: Ctx,
+    dump_dir: str,
+    dump_tag: str | None,
+    dump_action: str,
+    account: str | None,
+    name: str,
+    columns: list[str],
+    rows: list[dict],
+    dump_params: dict | None,
+    dump_raw: dict[str, list] | None,
+    dump_fields: dict | None,
+    dump_tally: dict | None,
+    dump_logins: list | None,
+    dump_scope: str | None,
+    errors: list[str] | None,
+    truncated: bool,
+) -> str:
+    """v1.4.0: односекционный конверт (делегирует write_dump_sections)."""
+    return write_dump_sections(
+        ctx,
+        dump_dir,
+        dump_action,
+        account,
+        dump_params or {},
+        {name: {"columns": columns, "display_rows": rows,
+                "raw_items": (dump_raw or {}).get(name, [])}},
+        dump_fields or {},
+        dump_tally,
+        list(dump_logins or []),
+        dump_scope,
+        list(errors or []),
+        truncated,
+        dump_tag=dump_tag,
+    )
+
+
 def finalize(
     ctx: Ctx,
     context: str,
@@ -328,6 +564,16 @@ def finalize(
     # v1.2.1: подпись главной итоговой строки + доп. строки итогов.
     totals_label: str = "Итого",
     extra_totals_lines: list[str] | None = None,
+    # v1.4.0: файловый конверт для dump (только при dump_dir).
+    dump_dir: str | None = None,
+    dump_tag: str | None = None,
+    dump_action: str | None = None,
+    dump_params: dict | None = None,
+    dump_raw: dict[str, list] | None = None,
+    dump_fields: dict | None = None,
+    dump_tally: dict | None = None,
+    dump_logins: list | None = None,
+    dump_scope: str | None = None,
 ) -> str:
     """Cap rows at 200, render table, autosave full result on cut or demand.
 
@@ -335,14 +581,19 @@ def finalize(
     json/md/csv) и возвращает путь + сводку (первые 20 строк); inline всегда
     несёт явный truncated-флаг. save_as — устаревший алиас file-режима.
     exports/-автосохранение при обрезке оставлено как было (устарело).
+
+    v1.4.0: при dump_dir + dump_action вместо reports/ пишется детерминированный
+    JSON-конверт <NN>_<action>[_<tag>].json (raw + manifest + describe);
+    в чат — сводка и путь к конверту.
     """
     from directai_mcp.config import reports_base_dir
 
     if save_as:
         output, format = "file", save_as
+    dump_mode = bool(dump_dir and dump_action)
     shown_cap = min(requested or ctx.settings.max_rows, MAX_TOOL_ROWS)
     shown = min(len(rows), shown_cap)
-    if output == "file":
+    if output == "file" and not dump_mode:
         reports = reports_base_dir(ctx.settings)
         if format == "json":
             path = save_json(reports, name, account, context, columns, rows)
@@ -366,24 +617,37 @@ def finalize(
             f"{summary}"
         )
     else:
-        out = render_table(
-            context,
-            columns,
-            rows,
-            shown_cap,
-            money_cols=money_cols,
-            with_totals=with_totals,
-            single_goal=single_goal,
-            totals_override=totals_override,
-            totals_suffix=totals_suffix,
-            top_line=top_line,
-            header_map=header_map,
-            value_map=value_map,
-            revenue_label=revenue_label,
-            totals_label=totals_label,
-            extra_totals_lines=extra_totals_lines,
-        )
-        out += f"\n\n{truncated_line(len(rows), shown)}"
+        if output == "file" and dump_mode:
+            # v1.4.0: сводка без записи в общий reports/ (файл — конверт ниже).
+            out = render_table(
+                context, columns, rows, FILE_SUMMARY_ROWS,
+                money_cols=money_cols, with_totals=with_totals,
+                single_goal=single_goal, totals_override=totals_override,
+                totals_suffix=totals_suffix,
+                top_line=top_line, header_map=header_map,
+                value_map=value_map, revenue_label=revenue_label,
+                totals_label=totals_label,
+                extra_totals_lines=extra_totals_lines,
+            )
+        else:
+            out = render_table(
+                context,
+                columns,
+                rows,
+                shown_cap,
+                money_cols=money_cols,
+                with_totals=with_totals,
+                single_goal=single_goal,
+                totals_override=totals_override,
+                totals_suffix=totals_suffix,
+                top_line=top_line,
+                header_map=header_map,
+                value_map=value_map,
+                revenue_label=revenue_label,
+                totals_label=totals_label,
+                extra_totals_lines=extra_totals_lines,
+            )
+            out += f"\n\n{truncated_line(len(rows), shown)}"
     if errors:
         out += "\n\n" + "\n".join(errors)
     net = net_summary(ctx)
@@ -394,6 +658,13 @@ def finalize(
         ctx.notes.clear()
     if notes:
         out += "\n\n" + "\n".join(f"Примечание: {n}" for n in notes)
+    if dump_mode:
+        out += "\n\n" + _dump_envelope_line(
+            ctx, dump_dir or "", dump_tag, dump_action or "", account,
+            name, columns, rows, dump_params, dump_raw, dump_fields,
+            dump_tally, dump_logins, dump_scope, errors,
+            truncated=len(rows) > FILE_SUMMARY_ROWS,
+        )
     if output == "inline" and len(rows) > shown_cap and ctx.data_dir is not None:
         # Legacy-автосохранение при обрезке (шаг 1.1-3, правка: единый
         # каталог reports_dir вместо exports/; save_as сюда не попадает —

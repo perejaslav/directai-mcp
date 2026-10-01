@@ -508,6 +508,8 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
 
     async def fetch(entry: AccountEntry, client):
         ads: list[dict] = []
+        raw_sets: list[dict] = []
+        raw_exts: list[dict] = []
         states = {"States": list(params.states)} if params.states else {}
         for ids in chunk(params.campaign_ids, 10):
             ads.extend(
@@ -520,6 +522,7 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
                     },
                     entry.login,
                     "Ads",
+                    tally=tally,
                 )
             )
         if params.adgroup_ids:
@@ -534,6 +537,7 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
                     },
                     entry.login,
                     "Ads",
+                    tally=tally,
                 )
             )
         if params.ad_ids:
@@ -547,6 +551,7 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
                     },
                     entry.login,
                     "Ads",
+                    tally=tally,
                 )
             )
         infos = [_extract(ad) for ad in ads]
@@ -562,7 +567,9 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
                 },
                 entry.login,
                 "SitelinksSets",
+                tally=tally,
             )
+            raw_sets.extend(sets)
             for s in sets:
                 # v1.1.17: у быстрой ссылки видны и текст, и URL.
                 titles = [
@@ -574,6 +581,7 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
         # v1.1.25: модерация уточнений (Status/StatusClarification, дока
         # ref-v5/adextensions/get); отклонённое → «частично отклонено».
         callout_rej: dict[int, tuple[str, str]] = {}
+        raw_exts: list[dict] = []
         if ext_ids:
             exts = await client.get_all(
                 "adextensions",
@@ -585,7 +593,9 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
                 },
                 entry.login,
                 "AdExtensions",
+                tally=tally,
             )
+            raw_exts.extend(exts)
             for e in exts:
                 text = (e.get("Callout") or {}).get("CalloutText", "")
                 if text:
@@ -594,8 +604,9 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
                     clar = e.get("StatusClarification")
                     callout_rej[e["Id"]] = (
                         text or f"#{e['Id']}", str(clar) if clar else "")
-        return ads, sitelinks, callouts, callout_rej
+        return ads, sitelinks, callouts, callout_rej, raw_sets, raw_exts
 
+    tally: dict = {}
     results = await map_accounts(ctx, params.account, fetch)
     entries = [e for e, _ in results]
     columns = [
@@ -621,6 +632,9 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
         "Mobile",
     ]
     rows: list[dict] = []
+    raw_ads: list[dict] = []
+    raw_sitelinks: list[dict] = []
+    raw_adexts: list[dict] = []
     errors: list[str] = []
     # v1.1.23: полные наборы заголовков/текстов — только CSV/JSON (в inline
     # агенты берут обрезанный первый и теряют варианты). В MD-файле « | »
@@ -641,7 +655,10 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
         if isinstance(payload, DirectError):
             errors.append(f"⚠ {entry.login}: {payload.human_message()}")
             continue
-        ads, sitelinks, callouts, callout_rej = payload
+        ads, sitelinks, callouts, callout_rej, raw_sets, raw_exts = payload
+        raw_ads.extend(ads)
+        raw_sitelinks.extend(raw_sets)
+        raw_adexts.extend(raw_exts)
         for ad in ads:
             info = _extract(ad)
             ext_texts = [callouts[i] for i in info["ext_ids"] if i in callouts]
@@ -691,10 +708,26 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
     display = (["_account"] if len(entries) > 1 else []) + use_columns
     context = f"{mark}ads_list: {', '.join(e.login for e in entries)}."
     return finalize(
-        ctx, context, "ads_list", display, rows, params.limit, params.save_as, errors,
+        ctx, context, "ads_list", display, rows, params.limit, params.save_as,
+        errors,
         output=params.output,
         format=params.format,
         account=params.account,
+        dump_dir=params.dump_dir,
+        dump_tag=params.dump_tag,
+        dump_action="ads_list",
+        dump_params=params.model_dump(),
+        dump_raw={
+            "ads": [dict(i, linked_to_campaign=True) for i in raw_ads],
+            "sitelink_sets": [
+                dict(i, linked_to_campaign=True) for i in raw_sitelinks],
+            "ad_extensions": [
+                dict(i, linked_to_campaign=True) for i in raw_adexts],
+        },
+        dump_fields=dict({"FieldNames": FIELDS}, **_GET_SUBFIELDS),
+        dump_tally=tally,
+        dump_logins=[e.login for e in entries],
+        dump_scope="campaign",
     )
 
 

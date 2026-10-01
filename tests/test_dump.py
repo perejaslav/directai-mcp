@@ -230,7 +230,8 @@ def test_get_all_page_limit_override(monkeypatch):
 
     seen: list[dict] = []
 
-    async def fake_call(self, service, method, params, login, version="v5"):
+    async def fake_call(self, service, method, params, login, version="v5",
+                        tally=None):
         seen.append(params["Page"])
         return {"Businesses": []}
 
@@ -250,7 +251,7 @@ def test_ads_states_filter_passed(monkeypatch, tmp_path):
 
     async def fake(ctx, account_value, fn):
         class Client:
-            async def get_all(self, service, params, login, key):
+            async def get_all(self, service, params, login, key, **kw):
                 seen.append(params["SelectionCriteria"])
                 return []
 
@@ -259,7 +260,7 @@ def test_ads_states_filter_passed(monkeypatch, tmp_path):
 
         entry = _entry()
         await fn(entry, Client())
-        return [(entry, ([], {}, {}, {}))]
+        return [(entry, ([], {}, {}, {}, [], []))]
 
     monkeypatch.setattr(ads_mod, "map_accounts", fake)
     asyncio.run(ACTIONS["ads_list"].run(

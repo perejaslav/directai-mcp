@@ -18,6 +18,8 @@ class DictionariesGetParams(BaseModel):
     output: Literal["inline", "file"] = "inline"
     format: Literal["json", "md", "csv"] = "json"
     save_as: Literal["csv", "md"] | None = None
+    dump_dir: str | None = None
+    dump_tag: str | None = None
 
     @classmethod
     def _check_limit(cls, value: int | None) -> int | None:
@@ -44,8 +46,9 @@ class DictionariesGetParams(BaseModel):
 async def _get(ctx: Ctx, params: BaseModel) -> str:
     assert isinstance(params, DictionariesGetParams)
     mark = "[ПЕСОЧНИЦА] " if ctx.sandbox else ""
+    tally: dict = {}
     try:
-        regions = await geo_regions(ctx)
+        regions = await geo_regions(ctx, tally=tally)
     except DirectError as e:
         return f"Ошибка словаря GeoRegions: {e.human_message()}"
     by_id = {r.get("GeoRegionId"): r for r in regions}
@@ -81,4 +84,14 @@ async def _get(ctx: Ctx, params: BaseModel) -> str:
         money_cols=(),
         output=params.output,
         format=params.format,
+        dump_dir=params.dump_dir,
+        dump_tag=params.dump_tag,
+        dump_action="dictionaries_get",
+        dump_params=params.model_dump(),
+        dump_raw={"dictionaries_get": [
+            dict(m, linked_to_campaign=False) for m in matches]},
+        dump_fields={"DictionaryNames": ["GeoRegions"]},
+        dump_tally=tally,
+        dump_logins=[],
+        dump_scope="cabinet",
     )

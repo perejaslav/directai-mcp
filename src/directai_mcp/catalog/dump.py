@@ -319,6 +319,7 @@ class StrategiesGetParams(GetActionParams):
 async def _strategies(ctx: Ctx, params: BaseModel) -> str:
     assert isinstance(params, StrategiesGetParams)
     mark = "[ПЕСОЧНИЦА] " if ctx.sandbox else ""
+    tally: dict = {}
 
     async def fetch(entry: AccountEntry, client):
         criteria = {"Ids": params.strategy_ids} if params.strategy_ids else {}
@@ -330,6 +331,7 @@ async def _strategies(ctx: Ctx, params: BaseModel) -> str:
             ),
             entry.login,
             "Strategies",
+            tally=tally,
         )
 
     results = await map_accounts(ctx, params.account, fetch)
@@ -337,12 +339,14 @@ async def _strategies(ctx: Ctx, params: BaseModel) -> str:
     columns = ["Id", "Name", "Type", "Archived", "Attribution", "Counters",
                "Goals", "Params"]
     rows: list[dict] = []
+    raw: list[dict] = []
     errors: list[str] = []
     for entry, payload in results:
         if isinstance(payload, DirectError):
             errors.append(f"⚠ {entry.login}: {payload.human_message()}")
             continue
         assert isinstance(payload, list)
+        raw.extend(payload)
         for item in payload:
             row = {
                 "Id": item.get("Id"),
@@ -360,10 +364,20 @@ async def _strategies(ctx: Ctx, params: BaseModel) -> str:
             rows.append(row)
     display = (["_account"] if len(entries) > 1 else []) + columns
     context = f"{mark}strategies_get: {', '.join(e.login for e in entries)}."
+    linked = bool(params.strategy_ids)
     return finalize(
         ctx, context, "strategies_get", display, rows, params.limit,
         params.save_as, errors, money_cols=(), output=params.output,
         format=params.format, account=params.account,
+        dump_dir=params.dump_dir, dump_tag=params.dump_tag,
+        dump_action="strategies_get",
+        dump_params=params.model_dump(),
+        dump_raw={"strategies_get": [
+            dict(i, linked_to_campaign=linked) for i in raw]},
+        dump_fields=dict({"FieldNames": _STRATEGY_FIELDS},
+                         **_STRATEGY_SUBFIELDS),
+        dump_tally=tally, dump_logins=[e.login for e in entries],
+        dump_scope="campaign" if linked else "cabinet",
     )
 
 
@@ -395,6 +409,7 @@ _FEED_FIELDS = [
 async def _feeds(ctx: Ctx, params: BaseModel) -> str:
     assert isinstance(params, FeedsGetParams)
     mark = "[ПЕСОЧНИЦА] " if ctx.sandbox else ""
+    tally: dict = {}
 
     async def fetch(entry: AccountEntry, client):
         # Без Ids критерий опускается целиком: пустой SelectionCriteria API
@@ -407,7 +422,7 @@ async def _feeds(ctx: Ctx, params: BaseModel) -> str:
         if params.feed_ids:
             body["SelectionCriteria"] = {"Ids": sorted(set(params.feed_ids))}
         return await client.get_all(
-            "feeds", body, entry.login, "Feeds")
+            "feeds", body, entry.login, "Feeds", tally=tally)
 
     results = await map_accounts(ctx, params.account, fetch)
     entries = [e for e, _ in results]
@@ -415,12 +430,14 @@ async def _feeds(ctx: Ctx, params: BaseModel) -> str:
                "UpdatedAt", "Source", "Campaigns", "FilterSchema",
                "TitleSources"]
     rows: list[dict] = []
+    raw: list[dict] = []
     errors: list[str] = []
     for entry, payload in results:
         if isinstance(payload, DirectError):
             errors.append(f"⚠ {entry.login}: {payload.human_message()}")
             continue
         assert isinstance(payload, list)
+        raw.extend(payload)
         for item in payload:
             url_feed = item.get("UrlFeed") or {}
             file_feed = item.get("FileFeed") or {}
@@ -442,10 +459,20 @@ async def _feeds(ctx: Ctx, params: BaseModel) -> str:
             rows.append(row)
     display = (["_account"] if len(entries) > 1 else []) + columns
     context = f"{mark}feeds_get: {', '.join(e.login for e in entries)}."
+    linked = bool(params.feed_ids)
     return finalize(
         ctx, context, "feeds_get", display, rows, params.limit,
         params.save_as, errors, money_cols=(), output=params.output,
         format=params.format, account=params.account,
+        dump_dir=params.dump_dir, dump_tag=params.dump_tag,
+        dump_action="feeds_get", dump_params=params.model_dump(),
+        dump_raw={"feeds_get": [
+            dict(i, linked_to_campaign=linked) for i in raw]},
+        dump_fields={"FieldNames": _FEED_FIELDS,
+                     "UrlFeedFieldNames": ["Login", "Url", "RemoveUtmTags"],
+                     "FileFeedFieldNames": ["Filename"]},
+        dump_tally=tally, dump_logins=[e.login for e in entries],
+        dump_scope="campaign" if linked else "cabinet",
     )
 
 
@@ -475,6 +502,7 @@ async def _fetch_targets(
     service: str,
     items_key: str,
     field_names: list[str],
+    tally: dict | None = None,
 ) -> tuple[list[AccountEntry], list[dict], list[str], list[tuple]]:
     """Shared get-loop for the three target services. Returns entries/rows/errors/raw."""
     if not params.campaign_ids and not params.adgroup_ids \
@@ -495,6 +523,7 @@ async def _fetch_targets(
                          "FieldNames": field_names},
                         entry.login,
                         items_key,
+                        tally=tally,
                     )
                 )
         else:
@@ -504,6 +533,7 @@ async def _fetch_targets(
                     {"SelectionCriteria": base, "FieldNames": field_names},
                     entry.login,
                     items_key,
+                    tally=tally,
                 )
             )
         return items
@@ -566,8 +596,10 @@ _DYNAMIC_FIELDS = [
 async def _dynamic(ctx: Ctx, params: BaseModel) -> str:
     assert isinstance(params, DynamicTargetsGetParams)
     mark = "[ПЕСОЧНИЦА] " if ctx.sandbox else ""
+    tally: dict = {}
     entries, rows, errors, raws = await _fetch_targets(
-        ctx, params, "dynamictextadtargets", "Webpages", _DYNAMIC_FIELDS)
+        ctx, params, "dynamictextadtargets", "Webpages", _DYNAMIC_FIELDS,
+        tally=tally)
     if not entries:
         return "\n\n".join(errors) if errors else "Нет данных."
     multi = len(entries) > 1
@@ -594,6 +626,14 @@ async def _dynamic(ctx: Ctx, params: BaseModel) -> str:
         ctx, context, "dynamic_targets_get", display, rows, params.limit,
         params.save_as, errors, money_cols=(), output=params.output,
         format=params.format, account=params.account,
+        dump_dir=params.dump_dir, dump_tag=params.dump_tag,
+        dump_action="dynamic_targets_get",
+        dump_params=params.model_dump(),
+        dump_raw={"dynamic_targets_get": [
+            dict(i, linked_to_campaign=True) for _, i in raws]},
+        dump_fields={"FieldNames": _DYNAMIC_FIELDS},
+        dump_tally=tally, dump_logins=[e.login for e in entries],
+        dump_scope="campaign",
     )
 
 
@@ -624,9 +664,10 @@ _DYNAMIC_FEED_FIELDS = [
 async def _dynamic_feed(ctx: Ctx, params: BaseModel) -> str:
     assert isinstance(params, DynamicFeedTargetsGetParams)
     mark = "[ПЕСОЧНИЦА] " if ctx.sandbox else ""
+    tally: dict = {}
     entries, rows, errors, raws = await _fetch_targets(
         ctx, params, "dynamicfeedadtargets", "DynamicFeedAdTargets",
-        _DYNAMIC_FEED_FIELDS)
+        _DYNAMIC_FEED_FIELDS, tally=tally)
     if not entries:
         return "\n\n".join(errors) if errors else "Нет данных."
     multi = len(entries) > 1
@@ -651,6 +692,14 @@ async def _dynamic_feed(ctx: Ctx, params: BaseModel) -> str:
         ctx, context, "dynamic_feed_targets_get", display, rows,
         params.limit, params.save_as, errors, money_cols=(),
         output=params.output, format=params.format, account=params.account,
+        dump_dir=params.dump_dir, dump_tag=params.dump_tag,
+        dump_action="dynamic_feed_targets_get",
+        dump_params=params.model_dump(),
+        dump_raw={"dynamic_feed_targets_get": [
+            dict(i, linked_to_campaign=True) for _, i in raws]},
+        dump_fields={"FieldNames": _DYNAMIC_FEED_FIELDS},
+        dump_tally=tally, dump_logins=[e.login for e in entries],
+        dump_scope="campaign",
     )
 
 
@@ -682,8 +731,10 @@ _SMART_FIELDS = [
 async def _smart(ctx: Ctx, params: BaseModel) -> str:
     assert isinstance(params, SmartTargetsGetParams)
     mark = "[ПЕСОЧНИЦА] " if ctx.sandbox else ""
+    tally: dict = {}
     entries, rows, errors, raws = await _fetch_targets(
-        ctx, params, "smartadtargets", "SmartAdTargets", _SMART_FIELDS)
+        ctx, params, "smartadtargets", "SmartAdTargets", _SMART_FIELDS,
+        tally=tally)
     if not entries:
         return "\n\n".join(errors) if errors else "Нет данных."
     multi = len(entries) > 1
@@ -711,6 +762,14 @@ async def _smart(ctx: Ctx, params: BaseModel) -> str:
         ctx, context, "smart_targets_get", display, rows, params.limit,
         params.save_as, errors, money_cols=(), output=params.output,
         format=params.format, account=params.account,
+        dump_dir=params.dump_dir, dump_tag=params.dump_tag,
+        dump_action="smart_targets_get",
+        dump_params=params.model_dump(),
+        dump_raw={"smart_targets_get": [
+            dict(i, linked_to_campaign=True) for _, i in raws]},
+        dump_fields={"FieldNames": _SMART_FIELDS},
+        dump_tally=tally, dump_logins=[e.login for e in entries],
+        dump_scope="campaign",
     )
 
 
@@ -746,6 +805,7 @@ async def _businesses(ctx: Ctx, params: BaseModel) -> str:
         return ("Ошибка: укажите business_ids (профили из объявлений; "
                 "весь кабинет не выгружается).")
     mark = "[ПЕСОЧНИЦА] " if ctx.sandbox else ""
+    tally: dict = {}
 
     async def fetch(entry: AccountEntry, client):
         return await client.get_all(
@@ -757,6 +817,7 @@ async def _businesses(ctx: Ctx, params: BaseModel) -> str:
             entry.login,
             "Businesses",
             page_limit=1000,  # больше businesses.get отклоняет (4002)
+            tally=tally,
         )
 
     results = await map_accounts(ctx, params.account, fetch)
@@ -764,12 +825,14 @@ async def _businesses(ctx: Ctx, params: BaseModel) -> str:
     columns = ["Id", "Name", "Address", "Phone", "Published", "Rubric",
                "Urls", "ProfileUrl"]
     rows: list[dict] = []
+    raw: list[dict] = []
     errors: list[str] = []
     for entry, payload in results:
         if isinstance(payload, DirectError):
             errors.append(f"⚠ {entry.login}: {payload.human_message()}")
             continue
         assert isinstance(payload, list)
+        raw.extend(payload)
         for item in payload:
             row = {
                 "Id": item.get("Id"),
@@ -790,6 +853,13 @@ async def _businesses(ctx: Ctx, params: BaseModel) -> str:
         ctx, context, "businesses_get", display, rows, params.limit,
         params.save_as, errors, money_cols=(), output=params.output,
         format=params.format, account=params.account,
+        dump_dir=params.dump_dir, dump_tag=params.dump_tag,
+        dump_action="businesses_get", dump_params=params.model_dump(),
+        dump_raw={"businesses_get": [
+            dict(i, linked_to_campaign=True) for i in raw]},
+        dump_fields={"FieldNames": _BUSINESS_FIELDS},
+        dump_tally=tally, dump_logins=[e.login for e in entries],
+        dump_scope="campaign",
     )
 
 
@@ -819,6 +889,7 @@ _TURBO_FIELDS = ["Id", "Name", "Href", "PreviewHref", "TurboSiteHref",
 async def _turbo(ctx: Ctx, params: BaseModel) -> str:
     assert isinstance(params, TurboPagesGetParams)
     mark = "[ПЕСОЧНИЦА] " if ctx.sandbox else ""
+    tally: dict = {}
 
     async def fetch(entry: AccountEntry, client):
         criteria = ({"Ids": sorted(set(params.turbopage_ids))}
@@ -828,6 +899,7 @@ async def _turbo(ctx: Ctx, params: BaseModel) -> str:
             {"SelectionCriteria": criteria, "FieldNames": _TURBO_FIELDS},
             entry.login,
             "TurboPages",
+            tally=tally,
         )
 
     results = await map_accounts(ctx, params.account, fetch)
@@ -835,11 +907,13 @@ async def _turbo(ctx: Ctx, params: BaseModel) -> str:
     columns = ["Id", "Name", "Href", "Preview", "Site"]
     rows: list[dict] = []
     errors: list[str] = []
+    raw: list[dict] = []
     for entry, payload in results:
         if isinstance(payload, DirectError):
             errors.append(f"⚠ {entry.login}: {payload.human_message()}")
             continue
         assert isinstance(payload, list)
+        raw.extend(payload)
         for item in payload:
             row = {
                 "Id": item.get("Id"),
@@ -853,8 +927,16 @@ async def _turbo(ctx: Ctx, params: BaseModel) -> str:
             rows.append(row)
     display = (["_account"] if len(entries) > 1 else []) + columns
     context = f"{mark}turbopages_get: {', '.join(e.login for e in entries)}."
+    linked = bool(params.turbopage_ids)
     return finalize(
         ctx, context, "turbopages_get", display, rows, params.limit,
         params.save_as, errors, money_cols=(), output=params.output,
         format=params.format, account=params.account,
+        dump_dir=params.dump_dir, dump_tag=params.dump_tag,
+        dump_action="turbopages_get", dump_params=params.model_dump(),
+        dump_raw={"turbopages_get": [
+            dict(i, linked_to_campaign=linked) for i in raw]},
+        dump_fields={"FieldNames": _TURBO_FIELDS},
+        dump_tally=tally, dump_logins=[e.login for e in entries],
+        dump_scope="campaign" if linked else "cabinet",
     )

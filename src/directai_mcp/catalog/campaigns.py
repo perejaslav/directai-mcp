@@ -409,21 +409,25 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
     if not params.include_archived:
         criteria["States"] = ACTIVE_STATES
     body = {"SelectionCriteria": criteria, "FieldNames": LIST_FIELDS}
+    tally: dict = {}
 
     async def fetch(entry: AccountEntry, client):
         return await client.get_all(
-            "campaigns", dict(body), entry.login, "Campaigns", "v501"
+            "campaigns", dict(body), entry.login, "Campaigns", "v501",
+            tally=tally,
         )
 
     results = await map_accounts(ctx, params.account, fetch)
     columns = ["Id", "Name", "Type", "State", "Status"]
     rows: list[dict] = []
+    raw: list[dict] = []
     errors: list[str] = []
     for entry, payload in results:
         if isinstance(payload, DirectError):
             errors.append(f"⚠ {entry.login}: {payload.human_message()}")
             continue
         assert isinstance(payload, list)
+        raw.extend(payload)
         for item in payload:
             rows.append(
                 {
@@ -452,6 +456,16 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
         format=params.format,
         account=params.account,
         with_version=True,
+        dump_dir=params.dump_dir,
+        dump_tag=params.dump_tag,
+        dump_action="campaigns_list",
+        dump_params=params.model_dump(),
+        dump_raw={"campaigns_list": [
+            dict(i, linked_to_campaign=True) for i in raw]},
+        dump_fields={"FieldNames": LIST_FIELDS},
+        dump_tally=tally,
+        dump_logins=[e.login for e, _ in results],
+        dump_scope="campaign" if params.campaign_ids else "cabinet",
     ) + f"\n\n{version_footer()}"
 
 
@@ -514,10 +528,12 @@ async def _get(ctx: Ctx, params: BaseModel) -> str:
             "SearchOrganizationList",
         ],
     }
+    tally: dict = {}
 
     async def fetch(entry: AccountEntry, client):
         return await client.get_all(
-            "campaigns", dict(body), entry.login, "Campaigns", "v501"
+            "campaigns", dict(body), entry.login, "Campaigns", "v501",
+            tally=tally,
         )
 
     results = await map_accounts(ctx, params.account, fetch)
@@ -545,11 +561,13 @@ async def _get(ctx: Ctx, params: BaseModel) -> str:
     rows: list[dict] = []
     errors: list[str] = []
     details: list[str] = []
+    raw: list[dict] = []
     for entry, payload in results:
         if isinstance(payload, DirectError):
             errors.append(f"⚠ {entry.login}: {payload.human_message()}")
             continue
         assert isinstance(payload, list)
+        raw.extend(payload)
         for item in payload:
             negatives = _items(item.get("NegativeKeywords"))
             kind = item.get("Type")
@@ -593,6 +611,16 @@ async def _get(ctx: Ctx, params: BaseModel) -> str:
                             ctx.settings.goal_counters)
                 )
     display = (["_account"] if len(results) > 1 else []) + columns
+    _dump_fields = {
+        "FieldNames": GET_FIELDS,
+        "TextCampaignFieldNames": TEXT_FIELDS,
+        "UnifiedCampaignFieldNames": UNIFIED_FIELDS,
+        "TextCampaignSearchStrategyPlacementTypesFieldNames": [
+            "SearchResults", "ProductGallery", "DynamicPlaces"],
+        "UnifiedCampaignSearchStrategyPlacementTypesFieldNames": [
+            "SearchResults", "ProductGallery", "DynamicPlaces",
+            "Maps", "SearchOrganizationList"],
+    }
     out = finalize(
         ctx,
         _context(ctx, "campaigns_get", [e for e, _ in results]),
@@ -606,6 +634,16 @@ async def _get(ctx: Ctx, params: BaseModel) -> str:
         format=params.format,
         account=params.account,
         with_version=True,
+        dump_dir=params.dump_dir,
+        dump_tag=params.dump_tag,
+        dump_action="campaigns_get",
+        dump_params=params.model_dump(),
+        dump_raw={"campaigns_get": [
+            dict(i, linked_to_campaign=True) for i in raw]},
+        dump_fields=_dump_fields,
+        dump_tally=tally,
+        dump_logins=[e.login for e, _ in results],
+        dump_scope="campaign",
     )
     if details:
         out += "\n\n" + "\n\n".join(details)
