@@ -182,22 +182,29 @@ args = []
 
 | Файл | Что внутри и как править |
 |---|---|
-| `accounts.toml` | Ваши кабинеты: `[auth] login` — владелец токена, под каждый логин свой `[aliases.*]` (короткое имя и роль). Плюс `defaults` (`include_vat`, `max_rows`, `attribution`) и секция `[guard]`. Секретов здесь нет. Править любым текстовым редактором, применяется со следующего запроса. |
+| `accounts.toml` | Ваши кабинеты: `[auth] login` — владелец токена, под каждый логин свой `[aliases.*]` (короткое имя и роль). Плюс `defaults` (`include_vat`, `max_rows`, `attribution`), секция `[guard]` и секция `[audience]` (`write_enabled`, дефолт `false` — запись в Аудитории выключена). Секретов здесь нет. Править любым текстовым редактором, применяется со следующего запроса. |
 | `rules.toml` | Правила: обязательный DisplayUrlPath, слова для заголовков, пороги `max_budget_ratio` / `max_bid_ratio` (предупреждения при резких изменениях). |
 | `goals.toml` | `id цели → Название` (цели Метрики). В отчётах цель видна как «Название (id)», без названия — голый id. Названия вписываете вы. |
 | `journal.sqlite` | Журнал всех записей (не удаляйте). |
 | `exports\` | CSV/MD-выгрузки из отчётов. |
 | `logs\` | Логи сервера. |
 
-Переопределить каталог: переменная `DIRECTAI_HOME`. Токен: только Credential
-Manager (`directai-mcp`) или переменная `DIRECTAI_TOKEN`.
+Переопределить каталог: переменная `DIRECTAI_HOME`. Токен Директа: только
+Credential Manager (`directai-mcp`) или переменная `DIRECTAI_TOKEN`. Для
+Яндекс.Вебмастера можно хранить отдельный токен: `directai-mcp set-token
+--webmaster` (Credential Manager `directai-mcp-webmaster` или переменная
+`DIRECTAI_WEBMASTER_TOKEN`); без него используется основной токен.
+Запись в Яндекс Аудитории выключена по умолчанию
+(`[audience] write_enabled=false`); включается только явным
+`write_enabled = true`, путь тот же: `plan_write` → ваше согласие →
+`apply_write`, guard требует имя сегмента `[TEST DirectAI]*`.
 
 ## 4. Что умеет сервер
 
 Порядок работы ИИ: `search_actions` → `describe_action` → `run_read`
 (чтение) или `plan_write` → показать вам → `apply_write` (запись).
 
-Чтение (29):
+Чтение (42):
 
 | Действие | Что делает |
 |---|---|
@@ -215,7 +222,7 @@ Manager (`directai-mcp`) или переменная `DIRECTAI_TOKEN`.
 | `stats_custom` | Произвольный отчёт: свои поля и фильтры |
 | `campaigns_list`, `campaigns_get` | Список и полные настройки кампаний |
 | `adgroups_list` | Группы кампании |
-| `ads_list` | Объявления (ссылки, уточнения, DisplayUrlPath) |
+| `ads_list` | Объявления (ссылки, уточнения, DisplayUrlPath; фильтр States, вкл. архивные) |
 | `keywords_list` | Фразы группы или кампании |
 | `negatives_audit` | Все минус-фразы кампании одним ответом |
 | `extensions_list` | Быстрые ссылки, уточнения, изображения |
@@ -226,7 +233,15 @@ Manager (`directai-mcp`) или переменная `DIRECTAI_TOKEN`.
 | `changes_check` | Что менялось с даты |
 | `accounts_discover`, `accounts_check`, `accounts_balance` | Кабинеты: поиск, проверка доступа, баллы |
 | `counter_check` | Проверка счётчиков Метрики кампании |
+| `metrika_goals_list` | Цели счётчиков Метрики: id, название, тип (без статистики) |
 | `moderation_check` | Статусы модерации объявлений |
+| `webmaster_hosts`, `webmaster_summary`, `webmaster_query` | Вебмастер: сайты и подтверждение прав, ИКС и проблемы, произвольный read-ресурс API v4 |
+| `audience_segments_list`, `audience_segment_get` | Аудитории: сегменты пользователя (тип, статус, размер) |
+| `strategies_get` | Пакетные стратегии: настройки, бюджеты и цели |
+| `feeds_get` | Фиды: источник, статус обработки, кампании |
+| `dynamic_targets_get`, `dynamic_feed_targets_get`, `smart_targets_get` | Условия динамических объявлений и фильтры смарт-баннеров |
+| `businesses_get` | Профили организаций (только по ID) |
+| `turbopages_get` | Турбо-страницы: метаданные без содержимого блоков |
 
 Запись (15, все — только через план, см. §5):
 
@@ -364,6 +379,7 @@ if ($LASTEXITCODE -ne 0) {
 | Харнес не видит сервер | Стабильный путь к exe — `(Get-Command directai-mcp).Source` (обычно `%USERPROFILE%\.local\bin\directai-mcp.exe`); перезапуск харнеса, логи в `.directai\logs` |
 | План с предупреждениями не применяется | Это защита: повторите `apply_write` с `acknowledge_warnings=true` только после вашего согласия |
 | `token missing for login 'X'` | Токен сохранён под другим логином: выполните `directai-mcp set-token --login <[auth] login>` с логином из `accounts.toml` |
+| Вебмастер: «нет права» / «токен не принят» | Нужен отдельный токен: `directai-mcp set-token --webmaster` (приложение «для доступа к API» с правом `webmaster:hostinfo`) |
 | `Ignoring malformed tool` | Битая копия/рецепт, не повод сносить рабочий инструмент: закройте все окна харнесов и переустановите с `--force` (бэкап — вне tool dir). `uninstall` — только для заведомо мусорных записей |
 | `os error 32` при переустановке | exe занят MCP-клиентами: покажите владельцев (`Get-CimInstance Win32_Process -Filter 'Name="directai-mcp.exe"'`, поле `ParentProcessId`), чужие процессы не убивайте. Шлюз Hermes (`python.exe … hermes_cli.main … gateway run`) работает в фоне и держит exe даже при закрытых окнах — человек останавливает его сам (см. §7: остановка сервера и шлюза), после установки запускает Hermes заново. Висящие `opencode serve` — тоже владельцы: их закрывают штатно, не `kill` |
 | Как быстро проверить сервер | `directai-mcp --version` → `check` → `probe` (две строки OK, `stats_summary` найден; баллы не тратятся). Сырые stdio-пробы вручную не делать |

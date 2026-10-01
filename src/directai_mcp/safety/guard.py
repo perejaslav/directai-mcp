@@ -19,6 +19,13 @@ TEST_PREFIX = "[TEST DirectAI]"
 # Текст блокировки — по ТЗ дословно.
 BUDGET_BLOCK = "Изменение бюджета запрещено политикой."
 
+# Запись в Аудитории выключена по умолчанию (мёрж feat/audience-api в main):
+# включается только явным [audience] write_enabled=true. Текст — в стиле
+# остальных блокировок guard.
+AUDIENCE_WRITE_DISABLED = (
+    "запись в Аудитории выключена ([audience] write_enabled=false)."
+)
+
 # Бюджетные ключи параметров (нормализация: нижний регистр без подчеркиваний).
 # Смена стратегии — тоже бюджетная операция (п.1 ТЗ): ключ strategy входит сюда.
 _BUDGET_KEYS = frozenset({
@@ -251,6 +258,46 @@ async def _shared_set_users(
     return owned
 
 
+async def _require_audience_test_segment(
+    ctx: Ctx, segment_id: object
+) -> None:
+    """Удаление сегмента Аудиторий — только [TEST DirectAI]* по живому имени.
+
+    Имя читается из API ПЕРЕД удалением; имени из параметров не доверяем.
+    Так защищены и 6 реальных сегментов пользователя.
+    """
+    from directai_mcp.api.audience import _get
+    from directai_mcp.api.errors import AudienceError
+    from directai_mcp.config import get_audience_token
+
+    try:
+        segment_id_int = int(segment_id)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        raise GuardBlocked("удаление сегмента: укажите числовой segment_id.") from None
+    token = get_audience_token(ctx.settings.auth_login) or ctx.token
+    if not token:
+        raise GuardBlocked("нет токена Аудиторий: сначала set-token --audience.")
+    try:
+        payload = await _get(token, "segments")
+    except AudienceError as exc:
+        raise GuardBlocked(f"имя сегмента не прочитано: {exc}.") from None
+    items = payload.get("segments") if isinstance(payload, dict) else None
+    if not isinstance(items, list):
+        raise GuardBlocked("нет поля `segments` в ответе GET segments.")
+    found = next(
+        (s for s in items if isinstance(s, dict) and s.get("id") == segment_id_int),
+        None,
+    )
+    if found is None:
+        raise GuardBlocked(f"сегмент {segment_id_int} не найден в Аудиториях.")
+    name = str(found.get("name") or "")
+    if not name.startswith(TEST_PREFIX):
+        raise GuardBlocked(
+            f"удаление сегмента {segment_id_int} («{name}») запрещено: "
+            "вне тестового префикса."
+        )
+
+
 def _norm_key(key: str) -> str:
     return str(key).lower().replace("_", "")
 
@@ -335,7 +382,7 @@ def _gids(params: dict) -> list[int]:
 
 
 async def check_write(
-    ctx: Ctx, client: DirectClient, login: str, action: str, params: dict
+    ctx: Ctx, client: DirectClient | None, login: str, action: str, params: dict
 ) -> None:
     """Gate every write in guard mode; raises GuardBlocked. No-op outside."""
     if not guard_active(ctx):
@@ -343,6 +390,24 @@ async def check_write(
     # v1.1.34: бюджеты — жёсткий запрет везде, включая [TEST DirectAI].
     if is_budget_write(action, params):
         raise GuardBlocked(BUDGET_BLOCK)
+    if action == "audience_segment_from_file":
+        # Мёрж в main: запись в Аудитории выключена по умолчанию, включается
+        # только явным [audience] write_enabled=true. Дальше — тот же guard:
+        # plan_write → подтверждение человека → apply_write.
+        if not ctx.settings.audience_write_enabled:
+            raise GuardBlocked(AUDIENCE_WRITE_DISABLED)
+        # Этап 2 (эксперимент): имя обязано нести тестовый префикс.
+        name = params.get("segment_name", "")
+        if not (isinstance(name, str) and name.startswith(TEST_PREFIX)):
+            raise GuardBlocked(
+                "создание сегмента Аудиторий без тестового префикса запрещено."
+            )
+        return
+    if action == "audience_segment_delete":
+        if not ctx.settings.audience_write_enabled:
+            raise GuardBlocked(AUDIENCE_WRITE_DISABLED)
+        await _require_audience_test_segment(ctx, params.get("segment_id"))
+        return
     if action == "campaigns_create":
         name = params.get("name", "")
         if not (isinstance(name, str) and name.startswith(TEST_PREFIX)):

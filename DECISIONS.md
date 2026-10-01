@@ -1,5 +1,247 @@
 # DECISIONS.md — отступления от SPEC и уточнения
 
+## v1.4.1 + мёрж feat/audience-api в main (01.10.2026)
+- Ветка `feat/audience-api` смёржена в `main` (`--no-ff`), тег `v1.4.1` на main.
+  Ветка не удалена. Состав мёржа: v1.2.4 (Вебмастер) + v1.2.5 (Аудитории чтение)
+  + v1.2.6 (Аудитории запись) + v1.3.0–v1.3.4, v1.4.0–v1.4.1 (dump-конвейер).
+- Запись в Аудитории ВЫКЛЮЧЕНА по умолчанию: `[audience] write_enabled=false`
+  (`Settings.audience_write_enabled`, дефолт `False`). При выключенной записи
+  `audience_segment_from_file`/`audience_segment_delete` отклоняются в
+  `check_write` и в `prepare` (двойная проверка) до любых API-вызовов.
+  Включение — только явным `write_enabled = true` в `accounts.toml`.
+  Путь при включённой записи тот же: plan_write → согласие человека →
+  apply_write (скрипт `scripts/audience_write.py` требует «ДА»);
+  guard требует имя сегмента `[TEST DirectAI]*` (создание — по параметру,
+  удаление — по живому имени из API перед удалением).
+- Тесты: +5 в `tests/test_audience_write.py` (выключено по умолчанию,
+  from_file/delete отклоняются при `enabled=False`, delete без
+  `acknowledge_warnings` отклоняется, парсинг флага `load_settings`).
+  Существующие тесты пишут через `_ctx(enabled=True)`.
+
+## v1.4.1: честные флаги конверта (приёмка dump, 01.10.2026)
+- `truncated` — неполнота raw (raw меньше, чем вернул API / не все
+  страницы), выводится из фактической пагинации tally; обрезка
+  display-строк для чата (`FILE_SUMMARY_ROWS`) — отдельный флаг
+  `display_truncated`, на `truncated` не влияет. Раньше любой ответ
+  длиннее 20 строк получал `truncated=true` при полном raw — валидатор
+  справедливо падал на живых кампаниях (keywords 75, bids 75,
+  negatives 264, audiences 222, extensions 993+).
+- `metrika_goals_list` (не-Direct источник): `pagination_complete` по
+  фактическому ответу Management API Метрики (все счётчики обработаны
+  без ошибок), tally Direct не нужен; частичный ответ (ошибка счётчика)
+  — `complete=false`. Неопределимая полнота — `null` + warning
+  (валидатор честно упадёт). Явное переопределение — параметры
+  `dump_complete`/`dump_truncated` в `finalize`.
+- Манифест пишет те же `pagination_complete`/`truncated`, что и конверт.
+- Тесты: `tests/test_v140_envelope.py` (+3: display обрезан/raw полон,
+  неполный raw, полный ответ Метрики; честный null без tally).
+  Всего 484 passed, ruff check чист.
+- Совместимость: схема конверта обратно совместима (+1 поле
+  `display_truncated`); старые файлы валидатор по-прежнему требует
+  `truncated=false`.
+
+## v1.4.0: файловый конверт для dump (этап Б ТЗ, 01.10.2026)
+- Новые параметры всех read-действий: `dump_dir` (папка сессии) и `dump_tag`
+  (суффикс). При `dump_dir` пишется детерминированный `<NN>_<action>[_<tag>].json`:
+  `{envelope_version, action, params, account, account_login, api_version,
+  requested_field_names, fetched_at, pages_fetched, pagination_complete,
+  truncated, units, warnings, sections: {имя: {columns, display_rows,
+  raw_items}}}` + `manifest.json` (seq, sha256) + `describe_<action>.json`
+  (один раз). В общий `reports/` в dump-режиме не пишется.
+- `items` (raw): объекты API как есть — micros, enum, null, вложенность;
+  единственное преобразование — ID-ключи `*Id(s)` int→str (иначе ошибка 7).
+  `_cut` и склейки — только в `display_rows`. Деньги не трогаем вообще.
+- Пагинация честная: `DirectClient.get_all/call` пишут `tally` (pages,
+  versions, complete по факту выхода из цикла); пустой tally →
+  `pagination_complete: null` + warning (не default true).
+- `linked_to_campaign`: audiences-списки — по привязкам Target;
+  images — по явному выбору (ad_ids/hashes/ids); feeds/strategies/turbo/
+  businesses — по явным ids; bare-вызовы → `scope: "cabinet"`, false.
+- `audiences_list`/`extensions_list`: в dump-режиме один файл с секциями;
+  обычный режим без изменений (2/3 файла). `counter_check`: секции
+  counters/goals + display-MD; `metrika_goals_list` — как все.
+- Живая проверка: конверт campaigns_get/ads_list(+archived) — NN-имена,
+  manifest+sha256, describe-файлы, raw micros, string-ID, `requested_field_names`.
+- Фикс до приёмки: ключи `dump_raw` обязаны совпадать с именем секции
+  (иначе raw терялся: ads/negatives/moderation/metrika); для подсекций —
+  `dump_extra`. Регрессионный тест на секции negatives.
+- Тесты: `tests/test_v140_envelope.py` (6: raw/ID/деньги/фразы, два вызова,
+  truncated, linked-флаги, scope cabinet, схема params). Всего 480 passed,
+  ruff чист (src, tests).
+
+## v1.3.4: фразы целиком по умолчанию (01.10.2026)
+- `clean_phrase`: отрезание « -…» только при явном `short_phrases=true`
+  (новый display-параметр `keywords_list` и stats-базы); по умолчанию фраза
+  как в API. `show_negatives` больше не режет (legacy, совместимость вызовов).
+  Ярлык «Автотаргетинг» для `---autotargeting` сохранён (display-конвенция,
+  категории — отдельной колонкой; raw — с этапом Б).
+- Живая проверка: 31 фраза из 75 dump v2 были усечены
+  (внутрифразные минус-слова); список — в отчёте шага.
+- Тесты: инвертирован `test_criterion_cut_on_space_hyphen_only`,
+  + `test_keywords_full_phrase_by_default` (« -купить -бесплатно»).
+  Всего 474 passed, ruff чист (src, tests).
+
+## v1.3.3: adgroups-колонки, counter goals_only, metrika_goals_list (01.10.2026)
+- `adgroups_list`: колонки NegativeKeywords («N фраз»), NegativeKeywordSharedSetIds
+  и TrackingParams (имена — WSDL adgroups/get). Тест-инвариант v1120 обновлён.
+- `counter_check`: параметр `goals_only=true` — только счётчики/цели/привязки
+  (Management API), без Reports/Stat-части; даты не требуются. Для dump.
+- Новое read-действие `metrika_goals_list` (campaign_ids/counter_ids):
+  цели счётчиков (id, название, тип) только через Management API —
+  resolves имён целей из правил ретаргетинга. Реестр 65→66, README 41→42.
+- Тесты: новый `tests/test_v133_goals_groups.py` (5: колонки, goals_only
+  без stats-вызовов — Reports не мокается и уронил бы тест, имена целей,
+  scope-ошибка, схема). Всего 473 passed, ruff чист (src, tests).
+
+## v1.3.2: фикс MobileAppCpcVideo-полей (01.10.2026)
+- Живая 8000 на 1.3.1: у `MobileAppCpcVideoAdBuilderAdFieldNames` только
+  Creative/TrackingUrl/ErirAdDescription/AutogeneratedErirAdDescription
+  (все остальные 15 subtype-массивов сверены с WSDL — совпадают).
+  Отдельный `MOBILE_APP_CPC_VIDEO_BUILDER_FIELDS` + регрессионный тест.
+- PriceExtension: единицы подтверждены живьём (Price=529000000 при
+  DisplayUrlPath «от-529-руб/кг») — micros→рубли + raw рядом.
+  Тесты: всего 468 passed (467 + тест цены),
+  ruff чист (src, tests).
+
+## v1.3.1: ссылки-сущности ads_list для dump (01.10.2026)
+- `ads_list` запрашивает subtype-поля всех типов (единый `_GET_SUBFIELDS`:
+  TextAd + TextAdPriceExtensionFieldNames + ResponsiveAd + MobileApp +
+  DynamicText + Image/MobileAppImage + все Builder + Shopping/Listing;
+  имена — строго по WSDL ads/get) и показывает колонки BusinessId,
+  TurboPageId, Price (raw, единицы PriceExtension не подтверждены),
+  Mobile; в файле дополнительно VCardId/Images/Tracking.
+- `_extract`: общий `_refs_into` + ветки всех subtype (раньше прочие типы
+  возвращали только «—»).
+- Инвариант test_v117: 14→18 колонок. `extensions_list` для sitelinks
+  уже отдавал полные Href/Description без усечения — покрыто тестом
+  (длинные строки 200+ символов проходят целиком).
+- Тесты: новый `tests/test_v131_ads_refs.py` (6). Всего 467 passed,
+  ruff чист (src, tests).
+
+## v1.3.0: dump-действия шага 0 — стратегии, фиды, таргетинг, бизнес, турбо (01.10.2026)
+- Семь read-действий в новом `catalog/dump.py` (регистрация 17→18 модулей,
+  реестр 58→65): `strategies_get` (Strategies.get + все subtype-массивы),
+  `feeds_get` (Feeds.get + Url/File-подполя), `dynamic_targets_get`
+  (DynamicTextAdTargets.get, ключ `Webpages`), `dynamic_feed_targets_get`
+  (DynamicFeedAdTargets.get), `smart_targets_get` (SmartAdTargets.get),
+  `businesses_get` (Businesses.get, только по `business_ids` — весь кабинет
+  не выгружается), `turbopages_get` (TurboPages.get, только метаданные).
+  Деньги (micros) — в рубли при показе (`micros_to_rubles` + `money`),
+  как в остальных действиях.
+- Схемы сверены с WSDL/XSD (`?wsdl`, `general.xsd`), живой API поправил
+  три места: у `StrategyPayForConversionMultipleGoalsFieldNames` нет
+  `GoalId` (только WeeklySpendLimit/CustomPeriodBudget/BudgetType);
+  массивов `StrategyHighestPositionFieldNames`/`StrategyManualCpmFieldNames`
+  не существует — вместо них 6 PerCampaign/PerFilter-массивов (все взяты
+  из WSDL); `feeds.get` требует опускать `SelectionCriteria` целиком при
+  выборке всех (пустой `{}` даёт 8000); `businesses.get` отклоняет
+  Limit > 1000 (4002) — в `DirectClient.get_all` добавлен опциональный
+  `page_limit` (дефолт PAGE_LIMIT, поведение остальных не меняется).
+- `ads_list`: новый фильтр `states` (AdStateSelectionEnum: ON, OFF,
+  SUSPENDED, OFF_BY_MONITORING, ARCHIVED) во всех трёх ветках скоупа;
+  по умолчанию поведение не меняется (без архивных). Живьём: кампания
+  без архивных — 4 активных / 0 архивных.
+- `keywords_list` без изменений: `---autotargeting` возвращается (проверено
+  живьём: строка «Автотаргетинг» с категориями в выгрузке кампании).
+- `vcards_get` НЕ реализован: Яндекс удалил визитки — живой API отвечает
+  3500 «Визитки больше не поддерживаются». В dump-скилле фиксируется как
+  ограничение источника `Yandex API`.
+- Живая проверка — `scripts/dump_step0.py` (через реестр ACTIONS, как
+  run_read; реальные ID только через аргументы CLI): strategies (пусто,
+  без ошибки), feeds (4 реальных фида), targets (пусто на UNIFIED без
+  ошибки), businesses (полный профиль по ID), turbopages (пусто без
+  ошибки). Динамических/смарт-кампаний в кабинетах нет (все 140 —
+  TEXT_CAMPAIGN по v5) — полный рендеринг таргетингов покрыт оффлайн-тестами
+  на WSDL-фигурах (`Conditions` списком и `{Items: [...]}`).
+- Тесты: новый `tests/test_dump.py` (10: регистрация read-only, схемы,
+  RU/EN-синонимы поиска, scope-ошибки без сети, оффлайн-рендер всех
+  действий, States в `ads_list`, `page_limit`); `test_registry.py`: +7
+  действий, модулей 18. README §4: чтение 32→41 (+строка Аудиторий-сегментов,
+  пропущенная в v1.2.5). Всего 461 passed, ruff чист (src, tests).
+
+## v1.2.6: Аудитории, этап 2 — запись из файла + delete (экспериментально, ветка feat/audience-api, 30.09.2026)
+- Два write-действия через plan_write → apply_write в новом
+  `catalog/audience_write.py` (`catalog/audiences.py` и `audience_segments.py`
+  не тронуты): `audience_segment_from_file` (uploading из CSV/TXT: phone/email,
+  нормализация и SHA256 локально, в API только хеши) и `audience_segment_delete`
+  (только `[TEST DirectAI]*` по живому имени). Кабинета у действий нет
+  (сегменты — владельца токена): `do_plan_write` веткой пишет план на
+  [auth] login без Direct-клиента; `prepare` ловит и AudienceError.
+- Confirm всегда content_type "crm": phone/email — поля CRM-формата
+  («в записи должно быть хотя бы одно из полей phone или email»).
+  Имя создания — только с префиксом (константа TEST_SEGMENT_PREFIX,
+  ограничение ветки). Файл с несколькими колонками без id_column отклоняется
+  сознательно: не гадаем, какая колонка контакты (иначе захешируем чужое).
+- ПДн: preview/before/requests/журнал/логи/ошибки — только метаданные (путь,
+  sha256 файла, счётчики, content_type, имя, id, статус); тела ответов POST
+  в ошибки не включаем (рядом наш payload); хеши живут только в памяти и во
+  временном файле системного temp с удалением в finally на всех путях.
+- Идемпотентность — штатная одноразовость планов (PlanStore.take; повторный
+  apply отклоняется), отдельных дедуп-механизмов у write-действий проекта нет.
+- Таймаут поллинга — не ошибка: apply «applied», verify ok=False с нотой
+  «ещё обрабатывается» → итог unverified + подсказка audience_segment_get.
+  processing_failed → partial; few_data → applied (на синтетике нормально).
+- Ревью-фикс: apply сверяет sha256 файла и total с планом (TOCTOU-отказ без API/temp); сбой confirm возвращает id неподтверждённой загрузки с подсказкой.
+
+## v1.2.5: Аудитории, этап 1 — токен + только чтение (экспериментально, ветка feat/audience-api, 30.09.2026)
+- Два read-действия API Яндекс Аудиторий (только GET): `audience_segments_list` —
+  все сегменты пользователя (id, имя, тип, статус, размер, дата, владелец);
+  `audience_segment_get` — один сегмент по id фильтром по списку (отдельного
+  GET одного сегмента в API нет). Отдельный файл `catalog/audience_segments.py`:
+  `catalog/audiences.py` уже занят условиями нацеливания и списками
+  ретаргетинга Директа — не тронут. Записи нет сознательно (upload/create/
+  delete/grant/revoke — следующие этапы).
+- Отдельный токен: `directai-mcp set-token --audience` кладёт токен в
+  Credential Manager под ключом `directai-mcp-audience` (env
+  `DIRECTAI_AUDIENCE_TOKEN`); нет отдельного — берётся основной. Причина та же,
+  что у Вебмастера: у приложений «для авторизации пользователей» лимит 3 группы
+  разрешений, основной токен перевыпускать нельзя. `check` дописывает строку
+  по Аудиториям (OK / FAIL / нет токена), существующие строки не меняются.
+- Транспорт `api/audience.py`: база `https://api-audience.yandex.ru/v1/management`
+  (RU-доки; EN-примеры дают зеркало `.com`), заголовок `Authorization: OAuth`
+  (НЕ Bearer), принудительный IPv4 как у Вебмастера. Ошибки — `AudienceError`
+  в `api/errors.py`; токен не попадает в логи и тексты ошибок.
+- Ветка экспериментальная (от `feat/webmaster-api`): при неудаче удаляется
+  целиком; версия — plain-патч (`1.2.5`, без alpha-суффикса: `_parse_version`
+  в `common.py` понимает только числовой X.Y.Z, суффикс ломал бы варнинг
+  устаревания). Экспериментальность несут ветка и эта пометка. Тесты: новый
+  `tests/test_audience_segments.py` по образцу `test_webmaster.py`; в
+  `test_registry.py` добавлены 2 действия и счётчик модулей 15→16.
+- Ревью-фикс: без отдельного токена `check` печатает «Аудитории: не настроены»
+  и в API не ходит (раньше основной токен без прав давал пугающий FAIL 403).
+  Строка Аудиторий на код возврата `check` не влияет: Аудитории необязательны.
+  Разовый вызов без харнеса — `uv run python scripts/audience_segments.py`.
+
+## v1.2.4: Вебмастер (API v4), отдельный токен, IPv4-транспорт (28.09.2026)
+- Три read-действия Яндекс.Вебмастера (API v4, только GET): `webmaster_hosts` —
+  сайты пользователя и статус подтверждения прав; `webmaster_summary` — ИКС,
+  страницы в поиске и исключённые, проблемы сайта; `webmaster_query` —
+  произвольный read-ресурс `/v4/user/{user-id}/...` (диагностика, индексация,
+  поисковые запросы, ссылки, sitemap и т.п.). Параметр `account` не применяется:
+  Вебмастер — не кабинет Директа. Запись (добавление/удаление сайта, переобход,
+  sitemap) сознательно не реализована: её нужно заводить через
+  `registry.write_action(...)` с планом и guard, как у Директа.
+- Отдельный токен: `directai-mcp set-token --webmaster` кладёт токен в
+  Credential Manager под ключом `directai-mcp-webmaster` (env
+  `DIRECTAI_WEBMASTER_TOKEN`); нет отдельного — берётся основной (`_token` в
+  `webmaster.py`). Причина: у приложений Яндекс.OAuth «для авторизации
+  пользователей» лимит 3 группы разрешений, и право `webmaster:hostinfo` в них
+  не влезает; приложения «для доступа к API» лимита не имеют. Токен никогда
+  не логируется и не печатается.
+- Транспорт принудительно IPv4
+  (`httpx.AsyncHTTPTransport(local_address="0.0.0.0")`): у
+  `api.webmaster.yandex.net` в DNS первым идёт AAAA-адрес, TLS поверх IPv6
+  рвётся (curl без `-4` — 000, с `-4` — ответ). Диагноз тот же, что в
+  `metrika_goals.py`, способ другой: там `getaddrinfo` с `family=AF_INET`
+  и свой TLS, здесь — штатный httpx-транспорт.
+- README: §3 — второй токен; §4 — Вебмастер в списке чтения (32);
+  §8 — строка про ошибки Вебмастера. `docs/PUBLIC-OVERVIEW.md` — Вебмастер
+  в возможностях чтения.
+- Тесты: новый `tests/test_webmaster.py` (6: регистрация и mode=read, схема
+  параметров, приоритет отдельного токена и откат на основной, IPv4-транспорт,
+  оффлайн-рендер `webmaster_hosts` через подмену `_get`). Всего 413 passed,
+  ruff чист (src, tests).
+
 ## v1.2.3: serverInfo, warning с инструкцией, probe, AGENTS.md (27.09.2026)
 - `serverInfo.version` в initialize = `__version__` пакета: `FastMCP` не
   передаёт версию во внутренний lowlevel-сервер, SDK подставлял версию

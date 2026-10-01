@@ -9,6 +9,16 @@ from pathlib import Path
 
 KEYRING_SERVICE = "directai-mcp"
 TOKEN_ENV_VAR = "DIRECTAI_TOKEN"
+# Отдельный токен для API, не влезающих в права основного приложения
+# (у приложений «для авторизации пользователей» лимит 3 группы разрешений,
+# поэтому Яндекс.Вебмастер живёт в отдельном приложении «для доступа к API»).
+KEYRING_SERVICE_WEBMASTER = "directai-mcp-webmaster"
+WEBMASTER_TOKEN_ENV_VAR = "DIRECTAI_WEBMASTER_TOKEN"
+# Этап 1 Аудиторий (экспериментально, ветка feat/audience-api): отдельный
+# токен по образцу Вебмастера — у приложений «для авторизации пользователей»
+# лимит 3 группы разрешений, основной токен перевыпускать нельзя.
+KEYRING_SERVICE_AUDIENCE = "directai-mcp-audience"
+AUDIENCE_TOKEN_ENV_VAR = "DIRECTAI_AUDIENCE_TOKEN"
 DEFAULT_AUTH_LOGIN = "agency-login"
 
 # Шаг 1.1-2: кеш обнаруженных кабинетов и его свежесть.
@@ -57,6 +67,9 @@ class Settings:
     legacy_sections: tuple[str, ...] = ()
     # Шаг 1.1-3: каталог отчётов из [paths] (дефолт — reports/ репозитория).
     reports_dir: Path | None = None
+    # Аудитории: запись выключена по умолчанию (мёрж feat/audience-api в main).
+    # Включение — только явным [audience] write_enabled=true в accounts.toml.
+    audience_write_enabled: bool = False
 
 
 def data_dir() -> Path:
@@ -160,6 +173,11 @@ def load_settings(path: Path | None = None) -> Settings:
     raw_reports = paths.get("reports_dir") if isinstance(paths, dict) else None
     reports_dir = Path(str(raw_reports)).expanduser() if raw_reports else None
 
+    audience_section = data.get("audience", {}) or {}
+    if not isinstance(audience_section, dict):
+        raise ConfigError(f"invalid [audience] section in {cfg_path}")
+    audience_write_enabled = bool(audience_section.get("write_enabled", False))
+
     return Settings(
         auth_login=auth_login,
         include_vat=include_vat,
@@ -177,6 +195,7 @@ def load_settings(path: Path | None = None) -> Settings:
         aliases=dict(aliases),
         legacy_sections=tuple(legacy),
         reports_dir=reports_dir,
+        audience_write_enabled=audience_write_enabled,
         units_warn_pct=units_warn_pct,
         counter_visits_warn_pct=counter_visits_warn_pct,
     )
@@ -390,3 +409,35 @@ def get_token(auth_login: str) -> str:
         f"token missing for login '{auth_login}'. Run `directai-mcp set-token` "
         f"or set {TOKEN_ENV_VAR}."
     )
+
+
+def get_webmaster_token(auth_login: str) -> str | None:
+    """Отдельный токен Вебмастера или None (тогда вызывающий берёт основной).
+
+    Нужен, когда права не влезают в одно приложение: у приложений «для
+    авторизации пользователей» лимит 3 группы разрешений, поэтому Вебмастер
+    обычно выносят в отдельное приложение «для доступа к API».
+    Токен никогда не логируется и не печатается.
+    """
+    env_token = os.environ.get(WEBMASTER_TOKEN_ENV_VAR)
+    if env_token:
+        return env_token
+    import keyring
+
+    return keyring.get_password(KEYRING_SERVICE_WEBMASTER, auth_login)
+
+
+def get_audience_token(auth_login: str) -> str | None:
+    """Отдельный токен Аудиторий или None (тогда вызывающий берёт основной).
+
+    По образцу Вебмастера: права Аудиторий не влезают в основное приложение
+    (лимит 3 группы разрешений), токен хранится под своим ключом
+    (`directai-mcp set-token --audience`). Токен никогда не логируется.
+    """
+
+    env_token = os.environ.get(AUDIENCE_TOKEN_ENV_VAR)
+    if env_token:
+        return env_token
+    import keyring
+
+    return keyring.get_password(KEYRING_SERVICE_AUDIENCE, auth_login)

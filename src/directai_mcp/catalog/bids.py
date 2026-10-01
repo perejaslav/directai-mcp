@@ -175,6 +175,7 @@ async def _bids(ctx: Ctx, params: BaseModel) -> str:
         "SearchFieldNames": ["Bid", "AutotargetingSearchBidIsAuto"],
         "NetworkFieldNames": ["Bid"],
     }
+    tally: dict = {}
 
     async def fetch(entry: AccountEntry, client):
         items: list[dict] = []
@@ -185,6 +186,7 @@ async def _bids(ctx: Ctx, params: BaseModel) -> str:
                     dict({"SelectionCriteria": {"CampaignIds": ids}}, **fields),
                     entry.login,
                     "KeywordBids",
+                    tally=tally,
                 )
             )
         for key, ids in (
@@ -198,6 +200,7 @@ async def _bids(ctx: Ctx, params: BaseModel) -> str:
                         dict({"SelectionCriteria": {key: ids}}, **fields),
                         entry.login,
                         "KeywordBids",
+                        tally=tally,
                     )
                 )
         return items
@@ -213,12 +216,14 @@ async def _bids(ctx: Ctx, params: BaseModel) -> str:
         "ServingStatus",
     ]
     rows: list[dict] = []
+    raw: list[dict] = []
     errors: list[str] = []
     for entry, payload in results:
         if isinstance(payload, DirectError):
             errors.append(f"⚠ {entry.login}: {payload.human_message()}")
             continue
         assert isinstance(payload, list)
+        raw.extend(payload)
         for item in payload:
             search = item.get("Search") or {}
             network = item.get("Network") or {}
@@ -248,6 +253,16 @@ async def _bids(ctx: Ctx, params: BaseModel) -> str:
         output=params.output,
         format=params.format,
         account=params.account,
+        dump_dir=params.dump_dir,
+        dump_tag=params.dump_tag,
+        dump_action="bids_get",
+        dump_params=params.model_dump(),
+        dump_raw={"bids_get": [
+            dict(i, linked_to_campaign=True) for i in raw]},
+        dump_fields=fields,
+        dump_tally=tally,
+        dump_logins=[e.login for e in entries],
+        dump_scope="campaign",
     )
 
 
@@ -284,8 +299,8 @@ async def _modifiers(ctx: Ctx, params: BaseModel) -> str:
         if level not in ("CAMPAIGN", "AD_GROUP"):
             return "Ошибка: levels только CAMPAIGN и AD_GROUP."
     mark = "[ПЕСОЧНИЦА] " if ctx.sandbox else ""
-    extra = {
-        "FieldNames": ["Id", "CampaignId", "AdGroupId", "Level", "Type"],
+    tally: dict = {}
+    extra = {        "FieldNames": ["Id", "CampaignId", "AdGroupId", "Level", "Type"],
         "MobileAdjustmentFieldNames": ["BidModifier", "OperatingSystemType"],
         "TabletAdjustmentFieldNames": ["BidModifier", "OperatingSystemType"],
         "DesktopAdjustmentFieldNames": ["BidModifier"],
@@ -323,6 +338,7 @@ async def _modifiers(ctx: Ctx, params: BaseModel) -> str:
                     ),
                     entry.login,
                     "BidModifiers",
+                    tally=tally,
                 )
             )
         if params.adgroup_ids:
@@ -340,6 +356,7 @@ async def _modifiers(ctx: Ctx, params: BaseModel) -> str:
                     ),
                     entry.login,
                     "BidModifiers",
+                    tally=tally,
                 )
             )
         return items
@@ -369,6 +386,7 @@ async def _modifiers(ctx: Ctx, params: BaseModel) -> str:
     if file_only:
         columns.append("BidModifier")
     rows: list[dict] = []
+    raw: list[dict] = []
     errors: list[str] = []
     seen_types: set[str] = set()
     for entry, payload in results:
@@ -376,6 +394,7 @@ async def _modifiers(ctx: Ctx, params: BaseModel) -> str:
             errors.append(f"⚠ {entry.login}: {payload.human_message()}")
             continue
         assert isinstance(payload, list)
+        raw.extend(payload)
         for item in payload:
             if isinstance(item.get("Type"), str):
                 seen_types.add(item["Type"])
@@ -406,6 +425,16 @@ async def _modifiers(ctx: Ctx, params: BaseModel) -> str:
         output=params.output,
         format=params.format,
         account=params.account,
+        dump_dir=params.dump_dir,
+        dump_tag=params.dump_tag,
+        dump_action="bid_modifiers_get",
+        dump_params=params.model_dump(),
+        dump_raw={"bid_modifiers_get": [
+            dict(i, linked_to_campaign=True) for i in raw]},
+        dump_fields=extra,
+        dump_tally=tally,
+        dump_logins=[e.login for e in entries],
+        dump_scope="campaign",
     )
     if not errors:
         missing = [t for t in _ALL_MOD_TYPES if t not in seen_types]

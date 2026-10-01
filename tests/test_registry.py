@@ -46,9 +46,24 @@ EXPECTED = frozenset(
         "dictionaries_get",
         "changes_check",
         "counter_check",
+        "metrika_goals_list",
         "accounts_discover",
         "accounts_check",
         "accounts_balance",
+        "webmaster_hosts",
+        "webmaster_summary",
+        "webmaster_query",
+        "audience_segments_list",
+        "audience_segment_get",
+        "audience_segment_from_file",
+        "audience_segment_delete",
+        "strategies_get",
+        "feeds_get",
+        "dynamic_targets_get",
+        "dynamic_feed_targets_get",
+        "smart_targets_get",
+        "businesses_get",
+        "turbopages_get",
     }
 )
 
@@ -58,4 +73,4 @@ def test_registry_has_all_actions():
 
 
 def test_registration_imports_referenced():
-    assert len(server_mod._ACTION_MODULES) == 14
+    assert len(server_mod._ACTION_MODULES) == 18

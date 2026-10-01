@@ -21,6 +21,7 @@ from directai_mcp.catalog.accounts import ensure_cache
 from directai_mcp.catalog.common import (
     GetActionParams,
     chunk,
+    finalize,
     goal_label,
 )
 from directai_mcp.catalog.metrika_goals import (
@@ -42,6 +43,12 @@ class CounterCheckParams(GetActionParams):
     counter_ids: list[int] = Field(default_factory=list)
     date_from: str = ""
     date_to: str = ""
+    goals_only: bool = Field(
+        default=False,
+        description=("Только цели и привязки (id, названия, счётчики), "
+                     "без статистической части (конверсии/визиты). "
+                     "Даты не требуются."),
+    )
 
     @field_validator("date_from", "date_to")
     @classmethod
@@ -124,16 +131,75 @@ async def _check(ctx: Ctx, params: BaseModel) -> str:
     threshold = ctx.settings.counter_visits_warn_pct
     out_parts: list[str] = []
     multi = len(entries) > 1
+    tally: dict = {}
+    collect: dict = {"counters": []}
     for entry in entries:
-        part = await _check_campaigns(ctx, entry, params, threshold, multi)
+        part = await _check_campaigns(ctx, entry, params, threshold, multi,
+                                      collect=collect, tally=tally)
         if part:
             out_parts.append(part)
     head = (f"{mark}counter_check: {params.date_from}–{params.date_to}, "
             f"кампании: {', '.join(str(c) for c in params.campaign_ids)}.")
+    if params.goals_only:
+        # v1.3.3: только цели — даты и статистика не нужны.
+        head = (f"{mark}counter_check (только цели, без статистики), "
+                f"кампании: {', '.join(str(c) for c in params.campaign_ids)}.")
     body = head + ("\n\n" + "\n\n".join(out_parts) if out_parts else " Строк нет.")
     output, _format = params.output, params.format
     if params.save_as:
         output = "file"
+    if params.dump_dir:
+        from directai_mcp.catalog.common import net_summary, write_dump_sections
+
+        net_summary(ctx)
+        goals = []
+        for counter in collect["counters"]:
+            for goal in counter.get("goals", []):
+                goals.append({
+                    "counter": counter.get("id"),
+                    "counter_name": counter.get("name", ""),
+                    "goal_id": goal.get("id"),
+                    "goal_name": goal.get("name", ""),
+                    "goal_type": goal.get("type", ""),
+                })
+        counters_raw = [dict(c, linked_to_campaign=True)
+                        for c in collect["counters"]]
+        for goal in goals:
+            goal["linked_to_campaign"] = True
+        body += "\n\n" + write_dump_sections(
+            ctx,
+            params.dump_dir,
+            "counter_check",
+            params.account,
+            params.model_dump(),
+            {
+                "counters": {
+                    "columns": ["id", "name", "site", "status", "goals"],
+                    "display_rows": [
+                        {"id": c.get("id"), "name": c.get("name", ""),
+                         "site": c.get("site", ""),
+                         "status": c.get("status", ""),
+                         "goals": len(c.get("goals", []))}
+                        for c in collect["counters"]],
+                    "raw_items": counters_raw,
+                },
+                "goals": {
+                    "columns": ["counter", "counter_name", "goal_id",
+                                "goal_name", "goal_type"],
+                    "display_rows": goals,
+                    "raw_items": goals,
+                },
+            },
+            {"Campaigns": ["Id", "Name", "CounterIds", "PriorityGoals",
+                            "BiddingStrategy"],
+             "Metrika": ["counter/{id}", "counter/{id}/goals"]},
+            tally,
+            [e.login for e in entries],
+            "campaign",
+            [],
+            False,
+            dump_tag=params.dump_tag,
+        )
     if output == "file":
         path = save_text(reports_base_dir(ctx.settings), "counter_check",
                          params.account, "# counter_check\n\n" + body)
@@ -142,7 +208,8 @@ async def _check(ctx: Ctx, params: BaseModel) -> str:
 
 
 async def _direct_campaigns(
-    ctx: Ctx, entry: AccountEntry, campaign_ids: list[int]
+    ctx: Ctx, entry: AccountEntry, campaign_ids: list[int],
+    tally: dict | None = None,
 ) -> tuple[list[dict], list[str]]:
     """Настройки кампаний: CounterIds, PriorityGoals, BiddingStrategy."""
     client = ctx.direct()
@@ -165,6 +232,7 @@ async def _direct_campaigns(
                         entry.login,
                         "Campaigns",
                         "v501",
+                        tally=tally,
                     )
                 )
             except DirectError as e:
@@ -316,16 +384,18 @@ async def _report_conversions(
 
 async def _check_campaigns(
     ctx: Ctx, entry: AccountEntry, params: CounterCheckParams, threshold: int,
-    multi: bool,
+    multi: bool, collect: dict | None = None, tally: dict | None = None,
 ) -> str:
-    items, problems = await _direct_campaigns(ctx, entry, params.campaign_ids)
+    items, problems = await _direct_campaigns(
+        ctx, entry, params.campaign_ids, tally=tally)
     found_ids = {i.get("Id") for i in items if isinstance(i, dict)}
     missing = [c for c in params.campaign_ids if c not in found_ids]
     for cid in missing:
         problems.append(f"⚠ {entry.login}: кампания {cid} не найдена.")
     blocks: list[str] = list(problems)
     for item in items:
-        blocks.append(await _check_one(ctx, entry, item, params, threshold))
+        blocks.append(await _check_one(ctx, entry, item, params, threshold,
+                                       collect=collect))
     if multi:
         head = f"## {entry.login}"
         return head + "\n\n" + "\n\n".join(blocks)
@@ -334,7 +404,7 @@ async def _check_campaigns(
 
 async def _check_one(
     ctx: Ctx, entry: AccountEntry, item: dict, params: CounterCheckParams,
-    threshold: int,
+    threshold: int, collect: dict | None = None,
 ) -> str:
     cid = item.get("Id")
     name = item.get("Name") or "—"
@@ -355,6 +425,12 @@ async def _check_one(
         except MetrikaError as e:
             lines.append(f"⚠ счётчик {counter_id}: {e}")
             continue
+        if collect is not None:
+            collect.setdefault("counters", []).append(dict(
+                info, goals=[
+                    {"id": gid, "name": gnames.get(gid, ""),
+                     "type": gtypes.get(gid, "")}
+                    for gid in gtypes]))
         for gid in gtypes:
             goal_counter.setdefault(gid, counter_id)
         goal_names_all.update(gnames)
@@ -408,6 +484,9 @@ async def _check_one(
     if goal_rows:
         lines.append(render_table("Цели кампании.", list(goal_rows[0]),
                              goal_rows, len(goal_rows), with_totals=False))
+    if params.goals_only:
+        # v1.3.3: без статистической части (конверсии/визиты) — дат не надо.
+        return "\n\n".join(lines)
     # Конверсии по целям.
     all_gids = sorted(set(goal_counter),
                       key=lambda x: (0, int(x)) if x.isdigit() else (1, x))
@@ -510,3 +589,120 @@ async def _check_one(
                      f"{money(to_decimal(cost_val) or 0)} ₽, итог LC "
                      f"{lc_conv} конв.")
     return "\n\n".join(lines)
+
+
+class MetrikaGoalsListParams(GetActionParams):
+    campaign_ids: list[int] = Field(default_factory=list)
+    counter_ids: list[int] = Field(default_factory=list)
+
+
+@action(
+    "metrika_goals_list",
+    "read",
+    "Цели счётчиков Метрики: id, название, тип (без статистики)",
+    (
+        "метрика",
+        "metrika",
+        "цели счётчика",
+        "цели счетчика",
+        "goals",
+        "имя цели",
+        "goal names",
+        "тип цели",
+        "справочник целей",
+    ),
+    MetrikaGoalsListParams,
+)
+async def _goals(ctx: Ctx, params: BaseModel) -> str:
+    """v1.3.3: имена целей Метрики (напр. из правил ретаргетинга).
+
+    Только Management API (counter/{id}/goals + info): дат и статистики нет.
+    """
+    assert isinstance(params, MetrikaGoalsListParams)
+    if not params.campaign_ids and not params.counter_ids:
+        return "Ошибка: укажите campaign_ids или counter_ids."
+    mark = "[ПЕСОЧНИЦА] " if ctx.sandbox else ""
+    entries = ctx.accounts(params.account)
+    counters: dict[str, list[int]] = {}
+    tally: dict = {}
+    errors: list[str] = []
+    for entry in entries:
+        items, problems = await _direct_campaigns(
+            ctx, entry, params.campaign_ids, tally=tally)
+        errors.extend(problems)
+        found: list[int] = []
+        for item in items:
+            cids, _, _ = _campaign_blocks(item)
+            found.extend(cids)
+        extra = [c for c in params.counter_ids if c not in found]
+        counters[entry.login] = sorted(set(found + extra))
+        if not counters[entry.login]:
+            errors.append(
+                f"⚠ {entry.login}: счётчики не найдены — проверьте "
+                "campaign_ids.")
+    columns = ["Counter", "CounterName", "GoalId", "GoalName", "GoalType"]
+    rows: list[dict] = []
+    raw: list[dict] = []
+    for entry in entries:
+        for counter_id in counters.get(entry.login, []):
+            try:
+                info = await counter_info(ctx.token, counter_id)
+                gtypes = await counter_goal_types(ctx.token, counter_id)
+                gnames = await counter_goal_names(ctx.token, counter_id)
+            except MetrikaError as e:
+                errors.append(f"⚠ счётчик {counter_id}: {e}")
+                continue
+            raw.append({
+                "counter": counter_id,
+                "counter_name": info.get("name") or "",
+                "site": info.get("site") or "",
+                "goals": [
+                    {"id": gid, "name": gnames.get(gid, ""),
+                     "type": gtypes.get(gid, "")}
+                    for gid in sorted(
+                        gtypes,
+                        key=lambda x: (0, int(x)) if x.isdigit() else (1, x))],
+                "linked_to_campaign": True,
+            })
+            if not gtypes:
+                rows.append({
+                    "_account": entry.login,
+                    "Counter": counter_id,
+                    "CounterName": info.get("name") or "—",
+                    "GoalId": "—",
+                    "GoalName": "нет целей",
+                    "GoalType": "—",
+                })
+                continue
+            for gid in sorted(gtypes, key=lambda x: (
+                    0, int(x)) if x.isdigit() else (1, x)):
+                rows.append({
+                    "_account": entry.login,
+                    "Counter": counter_id,
+                    "CounterName": info.get("name") or "—",
+                    "GoalId": gid,
+                    "GoalName": gnames.get(gid) or "—",
+                    "GoalType": gtypes.get(gid) or "—",
+                })
+    display = (["_account"] if len(entries) > 1 else []) + columns
+    context = (f"{mark}metrika_goals_list: "
+               f"{', '.join(e.login for e in entries)}.")
+    # v1.4.1: источник — Management API Метрики (без пагинации, tally
+    # Direct неприменим): полнота по факту — все счётчики обработаны
+    # без ошибок. Частичный ответ (ошибка счётчика) — complete=false.
+    metrika_complete = not errors
+    return finalize(
+        ctx, context, "metrika_goals_list", display, rows, params.limit,
+        params.save_as, errors, money_cols=(), output=params.output,
+        format=params.format, account=params.account,
+        dump_dir=params.dump_dir, dump_tag=params.dump_tag,
+        dump_action="metrika_goals_list",
+        dump_params=params.model_dump(),
+        dump_raw={"metrika_goals_list": raw},
+        dump_fields={"Metrika": ["counter/{id}", "counter/{id}/goals"],
+                     "Campaigns": ["Id", "CounterIds"]},
+        dump_tally=tally, dump_logins=[e.login for e in entries],
+        dump_scope="campaign",
+        dump_complete=metrika_complete,
+        dump_truncated=not metrika_complete,
+    )

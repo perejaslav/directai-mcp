@@ -16,6 +16,8 @@ from directai_mcp.api.direct import DirectClient
 from directai_mcp.api.errors import DirectError
 from directai_mcp.config import (
     KEYRING_SERVICE,
+    KEYRING_SERVICE_AUDIENCE,
+    KEYRING_SERVICE_WEBMASTER,
     ConfigError,
     TokenMissingError,
     data_dir,
@@ -76,11 +78,25 @@ def cmd_init(home: Path | None = None) -> int:
     return 0
 
 
-def cmd_set_token(login: str | None = None) -> int:
+def cmd_set_token(
+    login: str | None = None,
+    webmaster: bool = False,
+    audience: bool = False,
+) -> int:
     """Masked token input, save to Windows Credential Manager."""
     target = data_dir()
     target.mkdir(parents=True, exist_ok=True)
     setup_logging(target)
+
+    if audience:
+        service = KEYRING_SERVICE_AUDIENCE
+        label = "Аудитории"
+    elif webmaster:
+        service = KEYRING_SERVICE_WEBMASTER
+        label = "Вебмастер"
+    else:
+        service = KEYRING_SERVICE
+        label = "основной"
 
     resolved_login = login
     if not resolved_login:
@@ -93,14 +109,14 @@ def cmd_set_token(login: str | None = None) -> int:
             print(f"no accounts.toml, using login '{resolved_login}'")
             print(f"hint: run `directai-mcp init` first (data dir: {target})")
 
-    token = getpass.getpass(f"token for {resolved_login}: ").strip()
+    token = getpass.getpass(f"token for {resolved_login} ({label}): ").strip()
     if not token:
         print("empty token, not saved", file=sys.stderr)
         return 1
     import keyring
 
-    keyring.set_password(KEYRING_SERVICE, resolved_login, token)
-    print(f"saved to Credential Manager: {KEYRING_SERVICE}/{resolved_login}")
+    keyring.set_password(service, resolved_login, token)
+    print(f"saved to Credential Manager: {service}/{resolved_login}")
     return 0
 
 
@@ -157,9 +173,32 @@ async def _check_all(sandbox: bool) -> int:
         print(line)
         if line.startswith("FAIL"):
             ok = False
+    print(await _check_audience(settings.auth_login, token))
     if sandbox:
         print("[SANDBOX]")
     return 0 if ok else 1
+
+
+async def _check_audience(auth_login: str, main_token: str) -> str:
+    """Строка check по Аудиториям: только отдельный токен, в API без него не ходим."""
+    from directai_mcp.api.audience import _get
+    from directai_mcp.api.errors import AudienceError
+    from directai_mcp.config import get_audience_token
+
+    token = get_audience_token(auth_login)
+    if not token:
+        return (
+            "Аудитории: не настроены "
+            "(необязательно: directai-mcp set-token --audience)"
+        )
+    try:
+        payload = await _get(token, "segments")
+    except AudienceError as e:
+        return f"FAIL Аудитории: {e}"
+    items = payload.get("segments") if isinstance(payload, dict) else None
+    if items is None:
+        return "FAIL Аудитории: нет поля `segments` в ответе"
+    return f"OK Аудитории: {len(items)} сегментов"
 
 
 def cmd_check(sandbox: bool = False) -> int:
@@ -241,6 +280,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     st = sub.add_parser("set-token", help="save token to Credential Manager")
     st.add_argument("--login", default=None)
+    st.add_argument(
+        "--webmaster",
+        action="store_true",
+        help="сохранить отдельный токен Вебмастера (из приложения «для доступа к API»)",
+    )
+    st.add_argument(
+        "--audience",
+        action="store_true",
+        help="сохранить отдельный токен Аудиторий (экспериментально)",
+    )
 
     sub.add_parser("check", help="Clients.get + campaign count per account")
     sub.add_parser("serve", help="run MCP server over STDIO (step 2)")
@@ -259,7 +308,11 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "init":
         raise SystemExit(cmd_init())
     if args.command == "set-token":
-        raise SystemExit(cmd_set_token(args.login))
+        raise SystemExit(
+            cmd_set_token(
+                args.login, webmaster=args.webmaster, audience=args.audience
+            )
+        )
     if args.command == "check":
         raise SystemExit(cmd_check(sandbox=args.sandbox))
     if args.command == "probe":

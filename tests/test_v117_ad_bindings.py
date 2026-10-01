@@ -561,4 +561,4 @@ async def test_ads_list_shows_bindings(tmp_path, respx_mock):
     assert "DRAFT" in out
     # v1.1.17: в ячейке не может быть "|" — иначе таблица разъезжается
     rows = [ln for ln in out.splitlines() if str(11) in ln]
-    assert rows and rows[0].count("|") == 15  # 14 колонок ads_list (v1.1.25)
+    assert rows and rows[0].count("|") == 19  # 18 колонок ads_list (v1.3.1)

@@ -140,7 +140,7 @@ async def test_adgroups_list_autotargeting(respx_mock, tmp_path):
     ctx = _ctx(tmp_path)
     out = await ACTIONS["adgroups_list"].run(
         ctx, ACTIONS["adgroups_list"].params(account="m", campaign_ids=[7]))
-    assert "| Restricted | Autotargeting |" in out
+    assert "| Restricted | Negatives | SharedSets | Tracking | Autotargeting |" in out
     assert "целевые; бренд рекламодателя" in out
 
 

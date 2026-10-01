@@ -51,15 +51,19 @@ def test_hard_cap_200():
 
 
 def test_criterion_cut_on_space_hyphen_only():
+    # v1.3.4: по умолчанию фраза целиком; cut — только short_phrases=true.
     assert (
         _clean_criterion("грунт-эмаль по металлу -hammer -армокот", False)
-        == "грунт-эмаль по металлу"
+        == "грунт-эмаль по металлу -hammer -армокот"
     )
     assert (
         _clean_criterion("эмаль 3-в-1 по ржавчине", False) == "эмаль 3-в-1 по ржавчине"
     )
-    assert _clean_criterion("краска -крыша -опт", False) == "краска"
-    assert _clean_criterion("краска -крыша -опт", True) == "краска -крыша -опт"
+    assert _clean_criterion("краска -крыша -опт", False) == "краска -крыша -опт"
+    assert _clean_criterion("краска -крыша -опт", True) == "краска"
+    assert _clean_criterion("эмаль -купить -бесплатно", False) == (
+        "эмаль -купить -бесплатно")
+    assert _clean_criterion("эмаль -купить -бесплатно", True) == "эмаль"
     assert _clean_criterion("---autotargeting", False) == "Автотаргетинг"
     assert _clean_criterion("---autotargeting", True) == "Автотаргетинг"
     assert _clean_criterion(None, False) is None

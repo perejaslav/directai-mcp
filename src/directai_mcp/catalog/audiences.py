@@ -80,6 +80,13 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
     if not params.campaign_ids and not params.adgroup_ids:
         return "Ошибка: укажите campaign_ids или adgroup_ids."
     mark = "[ПЕСОЧНИЦА] " if ctx.sandbox else ""
+    tally: dict = {}
+    _TARGET_FIELDS = [
+        "Id", "CampaignId", "AdGroupId", "RetargetingListId", "InterestId",
+        "State", "ContextBid", "StrategyPriority",
+    ]
+    _LISTS_FIELDS = ["Id", "Type", "Name", "IsAvailable", "Scope", "Rules",
+                     "AvailableForTargetsInAdGroupTypes"]
 
     async def fetch(entry: AccountEntry, client):
         targets: list[dict] = []
@@ -89,19 +96,11 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
                     "audiencetargets",
                     {
                         "SelectionCriteria": {"CampaignIds": ids},
-                        "FieldNames": [
-                            "Id",
-                            "CampaignId",
-                            "AdGroupId",
-                            "RetargetingListId",
-                            "InterestId",
-                            "State",
-                            "ContextBid",
-                            "StrategyPriority",
-                        ],
+                        "FieldNames": _TARGET_FIELDS,
                     },
                     entry.login,
                     "AudienceTargets",
+                    tally=tally,
                 )
             )
         if params.adgroup_ids:
@@ -110,40 +109,38 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
                     "audiencetargets",
                     {
                         "SelectionCriteria": {"AdGroupIds": params.adgroup_ids},
-                        "FieldNames": [
-                            "Id",
-                            "CampaignId",
-                            "AdGroupId",
-                            "RetargetingListId",
-                            "InterestId",
-                            "State",
-                            "ContextBid",
-                            "StrategyPriority",
-                        ],
+                        "FieldNames": _TARGET_FIELDS,
                     },
                     entry.login,
                     "AudienceTargets",
+                    tally=tally,
                 )
             )
         lists = await client.get_all(
             "retargetinglists",
-            {"FieldNames": ["Id", "Type", "Name", "IsAvailable", "Scope",
-                            "Rules", "AvailableForTargetsInAdGroupTypes"]},
+            {"FieldNames": _LISTS_FIELDS},
             entry.login,
             "RetargetingLists",
+            tally=tally,
         )
-        return targets, lists
+        return targets, lists, {"targets": _TARGET_FIELDS,
+                                "lists": _LISTS_FIELDS}
 
     results = await map_accounts(ctx, params.account, fetch)
     entries = [e for e, _ in results]
     errors: list[str] = []
     target_rows: list[dict] = []
     list_rows: list[dict] = []
+    raw_targets: list[dict] = []
+    raw_lists: list[dict] = []
+    req_fields: dict = {}
     for entry, payload in results:
         if isinstance(payload, DirectError):
             errors.append(f"⚠ {entry.login}: {payload.human_message()}")
             continue
-        targets, lists = payload
+        targets, lists, req_fields = payload
+        raw_targets.extend(targets)
+        raw_lists.extend(lists)
         for t in targets:
             row = {
                 "Id": t.get("Id"),
@@ -208,4 +205,53 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
     parts.append(f"## Списки ретаргетинга\n\n{section}")
     if errors:
         parts.append("\n".join(errors))
+    if params.dump_dir:
+        from directai_mcp.catalog.common import write_dump_sections
+
+        linked_lists = set()
+        for t in raw_targets:
+            if isinstance(t, dict) and t.get("RetargetingListId") is not None:
+                try:
+                    linked_lists.add(int(t["RetargetingListId"]))
+                except (TypeError, ValueError):
+                    continue
+        target_cols = [
+            "Id", "CampaignId", "AdGroupId", "RetargetingListId",
+            "InterestId", "State", "ContextBid", "Priority",
+        ]
+        list_cols = ["Id", "Type", "Name", "Available", "Scope", "Rules",
+                     "AvailableIn"]
+        parts.append(write_dump_sections(
+            ctx,
+            params.dump_dir,
+            "audiences_list",
+            params.account,
+            params.model_dump(),
+            {
+                "audiences_targets": {
+                    "columns": target_cols,
+                    "display_rows": target_rows,
+                    "raw_items": [
+                        dict(t, linked_to_campaign=True)
+                        for t in raw_targets if isinstance(t, dict)],
+                },
+                "audiences_lists": {
+                    "columns": list_cols,
+                    "display_rows": list_rows,
+                    "raw_items": [
+                        dict(rl, linked_to_campaign=(
+                            isinstance(rl, dict) and rl.get("Id")
+                            in linked_lists))
+                        for rl in raw_lists if isinstance(rl, dict)],
+                },
+            },
+            {"AudienceTargets": {"FieldNames": req_fields.get("targets", [])},
+             "RetargetingLists": {"FieldNames": req_fields.get("lists", [])}},
+            tally,
+            [e.login for e in entries],
+            "campaign",
+            list(errors),
+            len(target_rows) > 20 or len(list_rows) > 20,
+            dump_tag=params.dump_tag,
+        ))
     return "\n\n".join(parts)

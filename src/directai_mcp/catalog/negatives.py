@@ -100,37 +100,48 @@ def _validate_negatives(phrases: list[str], total_limit: int, where: str) -> Non
 async def _audit(ctx: Ctx, params: BaseModel) -> str:
     assert isinstance(params, NegativesAuditParams)
     mark = "[ПЕСОЧНИЦА] " if ctx.sandbox else ""
+    tally: dict = {}
+    _NEG_FIELDS = {
+        "Campaigns": {
+            "FieldNames": ["Id", "Name", "NegativeKeywords"],
+            "TextCampaignFieldNames": ["NegativeKeywordSharedSetIds"],
+            "UnifiedCampaignFieldNames": ["NegativeKeywordSharedSetIds"],
+        },
+        "AdGroups": {
+            "FieldNames": [
+                "Id", "CampaignId", "Name", "NegativeKeywords",
+                "NegativeKeywordSharedSetIds",
+            ],
+        },
+        "NegativeKeywordSharedSets": {
+            "FieldNames": ["Id", "Name", "NegativeKeywords"],
+        },
+    }
 
     async def fetch(entry: AccountEntry, client):
         campaigns = await client.get_all(
             "campaigns",
-            {
-                "SelectionCriteria": {"Ids": params.campaign_ids},
-                "FieldNames": ["Id", "Name", "NegativeKeywords"],
-                "TextCampaignFieldNames": ["NegativeKeywordSharedSetIds"],
-                "UnifiedCampaignFieldNames": ["NegativeKeywordSharedSetIds"],
-            },
+            dict(
+                {"SelectionCriteria": {"Ids": params.campaign_ids}},
+                **_NEG_FIELDS["Campaigns"],
+            ),
             entry.login,
             "Campaigns",
             "v501",
+            tally=tally,
         )
         groups: list[dict] = []
         for ids in chunk(params.campaign_ids, 10):
             groups.extend(
                 await client.get_all(
                     "adgroups",
-                    {
-                        "SelectionCriteria": {"CampaignIds": ids},
-                        "FieldNames": [
-                            "Id",
-                            "CampaignId",
-                            "Name",
-                            "NegativeKeywords",
-                            "NegativeKeywordSharedSetIds",
-                        ],
-                    },
+                    dict(
+                        {"SelectionCriteria": {"CampaignIds": ids}},
+                        **_NEG_FIELDS["AdGroups"],
+                    ),
                     entry.login,
                     "AdGroups",
+                    tally=tally,
                 )
             )
         set_ids: set[int] = set()
@@ -143,26 +154,34 @@ async def _audit(ctx: Ctx, params: BaseModel) -> str:
         if set_ids:
             shared = await client.get_all(
                 "negativekeywordsharedsets",
-                {
-                    "SelectionCriteria": {"Ids": sorted(set_ids)},
-                    "FieldNames": ["Id", "Name", "NegativeKeywords"],
-                },
+                dict(
+                    {"SelectionCriteria": {"Ids": sorted(set_ids)}},
+                    **_NEG_FIELDS["NegativeKeywordSharedSets"],
+                ),
                 entry.login,
                 "NegativeKeywordSharedSets",
+                tally=tally,
             )
-        return campaigns, groups, shared
+        return campaigns, groups, shared, _NEG_FIELDS
 
     results = await map_accounts(ctx, params.account, fetch)
     entries = [e for e, _ in results]
     columns = ["Уровень", "Владелец", "Фраза"]
     rows: list[dict] = []
+    raw_camps: list[dict] = []
+    raw_groups: list[dict] = []
+    raw_sets: list[dict] = []
     errors: list[str] = []
     counts = {"Кампания": 0, "Группы": 0, "Наборы": 0}
+    neg_fields: dict = {}
     for entry, payload in results:
         if isinstance(payload, DirectError):
             errors.append(f"⚠ {entry.login}: {payload.human_message()}")
             continue
-        campaigns, groups, shared = payload
+        campaigns, groups, shared, neg_fields = payload
+        raw_camps.extend(campaigns)
+        raw_groups.extend(groups)
+        raw_sets.extend(shared)
         for camp in campaigns:
             owner = f"{camp.get('Name')} ({camp.get('Id')})"
             for phrase in _items(camp.get("NegativeKeywords")):
@@ -220,6 +239,23 @@ async def _audit(ctx: Ctx, params: BaseModel) -> str:
         output=params.output,
         format=params.format,
         account=params.account,
+        dump_dir=params.dump_dir,
+        dump_tag=params.dump_tag,
+        dump_action="negatives_audit",
+        dump_params=params.model_dump(),
+        dump_raw={"negatives_audit": []},
+        dump_extra={
+            "campaigns": [
+                dict(i, linked_to_campaign=True) for i in raw_camps],
+            "adgroups": [
+                dict(i, linked_to_campaign=True) for i in raw_groups],
+            "negative_keyword_shared_sets": [
+                dict(i, linked_to_campaign=True) for i in raw_sets],
+        },
+        dump_fields=neg_fields,
+        dump_tally=tally,
+        dump_logins=[e.login for e in entries],
+        dump_scope="campaign",
     )
 
 

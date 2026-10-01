@@ -67,7 +67,9 @@ def autotargeting_summary(settings: dict | None) -> str | None:
 
 
 async def autotargeting_by_group(
-    client, login: str, adgroup_ids: list[int]
+    client, login: str, adgroup_ids: list[int],
+    collect: list | None = None,
+    tally: dict | None = None,
 ) -> dict[int, str | None]:
     """AdGroupId -> сводка настроек автотаргетинга (один Keywords.get)."""
     from directai_mcp.catalog.common import chunk as _chunk
@@ -85,7 +87,10 @@ async def autotargeting_by_group(
             },
             login,
             "Keywords",
+            tally=tally,
         )
+        if collect is not None:
+            collect.extend(items)
         for item in items:
             if not isinstance(item, dict) or item.get("AdGroupId") is None:
                 continue
@@ -106,6 +111,11 @@ class KeywordsListParams(GetActionParams):
     adgroup_ids: list[int] = Field(default_factory=list)
     keyword_ids: list[int] = Field(default_factory=list)
     show_negatives: bool = False
+    short_phrases: bool = Field(
+        default=False,
+        description=("Только display: отрезать фразе всё после первого "
+                     "' -'. В данных фраза всегда целиком."),
+    )
 
 
 @action(
@@ -126,6 +136,7 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
         "AutotargetingSettingsCategoriesFieldNames": list(AUTO_CATEGORIES),
         "AutotargetingSettingsBrandOptionsFieldNames": list(AUTO_BRANDS),
     }
+    tally: dict = {}
 
     async def fetch(entry: AccountEntry, client):
         items: list[dict] = []
@@ -140,6 +151,7 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
                     ),
                     entry.login,
                     "Keywords",
+                    tally=tally,
                 )
             )
         if params.adgroup_ids:
@@ -155,6 +167,7 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
                     ),
                     entry.login,
                     "Keywords",
+                    tally=tally,
                 )
             )
         if params.keyword_ids:
@@ -170,6 +183,7 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
                     ),
                     entry.login,
                     "Keywords",
+                    tally=tally,
                 )
             )
         return items
@@ -188,19 +202,22 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
         "Autotargeting",
     ]
     rows: list[dict] = []
+    raw: list[dict] = []
     errors: list[str] = []
     for entry, payload in results:
         if isinstance(payload, DirectError):
             errors.append(f"⚠ {entry.login}: {payload.human_message()}")
             continue
         assert isinstance(payload, list)
+        raw.extend(payload)
         for item in payload:
             rows.append(
                 {
                     "_account": entry.login,
                     "Id": item.get("Id"),
                     "AdGroupId": item.get("AdGroupId"),
-                    "Keyword": clean_phrase(item.get("Keyword"), params.show_negatives),
+                    "Keyword": clean_phrase(item.get("Keyword"),
+                                            params.short_phrases),
                     "State": item.get("State"),
                     "Status": item.get("Status"),
                     "ServingStatus": item.get("ServingStatus"),
@@ -229,6 +246,16 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
         output=params.output,
         format=params.format,
         account=params.account,
+        dump_dir=params.dump_dir,
+        dump_tag=params.dump_tag,
+        dump_action="keywords_list",
+        dump_params=params.model_dump(),
+        dump_raw={"keywords_list": [
+            dict(i, linked_to_campaign=True) for i in raw]},
+        dump_fields=dict({"FieldNames": FIELDS}, **auto_extra),
+        dump_tally=tally,
+        dump_logins=[e.login for e in entries],
+        dump_scope="campaign",
     )
 
 

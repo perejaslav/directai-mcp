@@ -130,6 +130,7 @@ class DirectClient:
         params: dict,
         client_login: str | None,
         version: str = "v5",
+        tally: dict | None = None,
     ) -> dict:
         """POST /{service} {method}. Returns the `result` object.
 
@@ -137,6 +138,8 @@ class DirectClient:
         Dictionaries). version selects json/v5 vs json/v501 (SPEC 7.1).
         Raises DirectError; ambiguous write failures raise
         DirectUnverifiedError (no auto-retry of add/update/...).
+        tally (v1.4.0, optional): records {"pages", "versions", "complete"}
+        for the file envelope — single request counts as one complete page.
         """
         url = self._url(service, version)
         headers = {
@@ -191,6 +194,11 @@ class DirectClient:
                     raise DirectError(-1, f"HTTP {resp.status_code}", login=login)
                 if not isinstance(payload.get("result"), dict):
                     raise DirectError(-1, "missing `result` in response", login=login)
+                if tally is not None:
+                    tally["pages"] = tally.get("pages", 0) + 1
+                    tally["versions"] = sorted(
+                        set(tally.get("versions", [])) | {version})
+                    tally["complete"] = True
                 return payload["result"]
 
             raise DirectError(-1, "retry exhausted", login=login)
@@ -211,14 +219,24 @@ class DirectClient:
         client_login: str | None,
         items_key: str,
         version: str = "v5",
+        page_limit: int = PAGE_LIMIT,
+        tally: dict | None = None,
     ) -> list[dict]:
-        """Paginate get via Page/LimitedBy (SPEC 7.6)."""
+        """Paginate get via Page/LimitedBy (SPEC 7.6).
+
+        page_limit overrides PAGE_LIMIT for services capping page size
+        (e.g. businesses.get rejects Limit > 1000 with 4002).
+        tally (v1.4.0, optional): per-page counting flows from call();
+        complete stays True only when the loop exits naturally.
+        """
         items: list[dict] = []
         offset = 0
         while True:
             page_params = dict(params)
-            page_params["Page"] = {"Limit": PAGE_LIMIT, "Offset": offset}
-            result = await self.call(service, "get", page_params, client_login, version)
+            page_params["Page"] = {"Limit": page_limit, "Offset": offset}
+            result = await self.call(
+                service, "get", page_params, client_login, version,
+                tally=tally)
             batch = result.get(items_key, [])
             if isinstance(batch, list):
                 items.extend(batch)

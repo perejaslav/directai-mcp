@@ -13,39 +13,48 @@ from directai_mcp.api.direct import LAST_SEEN_UNITS
 from directai_mcp.catalog import accounts as accounts_mod
 from directai_mcp.catalog import adgroups as adgroups_mod
 from directai_mcp.catalog import ads as ads_mod
+from directai_mcp.catalog import audience_segments as audience_segments_mod
+from directai_mcp.catalog import audience_write as audience_write_mod
 from directai_mcp.catalog import audiences as audiences_mod
 from directai_mcp.catalog import bids as bids_mod
 from directai_mcp.catalog import campaigns as campaigns_mod
 from directai_mcp.catalog import changes as changes_mod
 from directai_mcp.catalog import counters as counters_mod
 from directai_mcp.catalog import dictionaries as dictionaries_mod
+from directai_mcp.catalog import dump as dump_mod
 from directai_mcp.catalog import extensions as extensions_mod
 from directai_mcp.catalog import keywords as keywords_mod
 from directai_mcp.catalog import limits as limits_mod
 from directai_mcp.catalog import moderation as moderation_mod
 from directai_mcp.catalog import negatives as negatives_mod
 from directai_mcp.catalog import stats as stats_mod
+from directai_mcp.catalog import webmaster as webmaster_mod
 
 # Referenced so ruff --fix never drops these registration imports.
 _ACTION_MODULES = (
     accounts_mod,
     adgroups_mod,
     ads_mod,
+    audience_segments_mod,
+    audience_write_mod,
     audiences_mod,
     bids_mod,
     campaigns_mod,
     changes_mod,
     counters_mod,
     dictionaries_mod,
+    dump_mod,
     extensions_mod,
     keywords_mod,
     moderation_mod,
     negatives_mod,
     stats_mod,
+    webmaster_mod,
 )
 from directai_mcp import __version__
 from directai_mcp.catalog.registry import ACTIONS, Ctx, search
 from directai_mcp.config import (
+    AccountEntry,
     ConfigError,
     TokenMissingError,
     data_dir,
@@ -272,7 +281,7 @@ def build_server(sandbox: bool = False) -> FastMCP:
 
 async def do_plan_write(ctx: Ctx, name: str, params: dict) -> str:
     """Shared plan_write body (also used by tests)."""
-    from directai_mcp.api.errors import DirectError
+    from directai_mcp.api.errors import AudienceError, DirectError
     from directai_mcp.safety.guard import precheck
 
     if guard_active(ctx):
@@ -294,14 +303,23 @@ async def do_plan_write(ctx: Ctx, name: str, params: dict) -> str:
         validated = act.params.model_validate(params)
     except ValidationError as e:
         return f"Ошибка параметров: {e}"
-    try:
-        entries = ctx.accounts(validated.account)
-    except ConfigError as e:
-        return f"Ошибка: {e}"
-    if len(entries) != 1:
-        return "Ошибка: запись требует ровно один аккаунт, не 'all'."
-    entry = entries[0]
-    client = ctx.direct()
+    account_value = getattr(validated, "account", None)
+    if account_value is None:
+        # Действия без кабинета (Аудитории — сегменты владельца токена):
+        # запись идёт на [auth] login, Direct-клиент не нужен.
+        entry = AccountEntry(
+            alias=ctx.settings.auth_login, login=ctx.settings.auth_login
+        )
+        client = None
+    else:
+        try:
+            entries = ctx.accounts(account_value)
+        except ConfigError as e:
+            return f"Ошибка: {e}"
+        if len(entries) != 1:
+            return "Ошибка: запись требует ровно один аккаунт, не 'all'."
+        entry = entries[0]
+        client = ctx.direct()
     try:
         try:
             await check_write(ctx, client, entry.login, name, validated.model_dump())
@@ -313,10 +331,11 @@ async def do_plan_write(ctx: Ctx, name: str, params: dict) -> str:
             # v1.1.16: guard внутри prepare (корректировки ставок) — тот же
             # формат ответа, что и на check_write, без создания плана.
             return f"Заблокировано защитой: {e}"
-        except (DirectError, ValueError) as e:
+        except (DirectError, AudienceError, ValueError) as e:
             return f"Ошибка подготовки: {e}"
     finally:
-        await client.aclose()
+        if client is not None:
+            await client.aclose()
     plan = Plan(
         plan_id="",
         action=name,
