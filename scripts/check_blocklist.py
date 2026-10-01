@@ -4,12 +4,16 @@ Reads %USERPROFILE%\\.directai\\sanitize-blocklist.txt (kept OUTSIDE the repo).
 Numeric entries (digits only) match as whole numbers: (?<!\\d)PAT(?!\\d).
 Name entries (see WHOLE_WORDS) match as whole words, case-insensitive.
 Other text entries match as substrings, case-insensitive.
+Plus FORBIDDEN_ID_DIGESTS: sha256 of forbidden long numeric IDs (the IDs
+themselves are never stored here) — any run of 15+ digits hashing to a
+listed digest blocks the commit.
 uv.lock is excluded (generated file: public package metadata with hex hashes).
 Prints only file + match count, never matched values.
 Exit 1 on any hit (commit blocked), 0 when clean.
 """
 import os
 import re
+import hashlib
 import subprocess
 import sys
 
@@ -17,6 +21,14 @@ HOME = os.environ.get("USERPROFILE", "")
 BLOCKLIST = os.path.join(HOME, ".directai", "sanitize-blocklist.txt")
 WHOLE_WORDS = {"ив" + "ан"}
 SKIP_FILES = {"uv.lock"}
+
+# Запрещённый реальный ID объявления (утёк в tests 01.10.2026, история
+# переписана): храним ТОЛЬКО sha256, не само число — иначе защита станет
+# новой утечкой. Срабатывает на серию цифр длиной 15+ с совпадающим хешем.
+FORBIDDEN_ID_DIGESTS = frozenset({
+    "dc835a6b3cd24e22692e8411585b019828e3f19db4264ceedc9300efec7c0afa",
+})
+_LONG_DIGITS = re.compile(r"\d{15,}")
 
 
 def load_patterns():
@@ -66,6 +78,10 @@ def check_file(path, numeric, words, text):
                 break
             hits += 1
             start = i + 1
+    for match in _LONG_DIGITS.finditer(content):
+        digest = hashlib.sha256(match.group(0).encode("ascii")).hexdigest()
+        if digest in FORBIDDEN_ID_DIGESTS:
+            hits += 1
     return hits
 
 
