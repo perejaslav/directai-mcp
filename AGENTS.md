@@ -137,3 +137,14 @@ Get-CimInstance Win32_Process -Filter 'Name="python.exe"' |
 См. README §10 «Знания Директа». Правило: поля из `campaign_setting_notices`
 (реестр `src/directai_mcp/catalog/notices.py`) не писать никогда —
 отклонять до обращения к API.
+
+## 9. Статусы поиска и основная цель (B1 + B3, v1.6.0)
+
+- Пусто ≠ объекта нет: пустой ответ не доказывает отсутствие
+  (`proves_account_empty=false`, `not_observed` не утверждает отсутствие).
+- Write только при `resolved+configured` (`statistics_only`/`not_observed`/
+  `ambiguous`/`failed`/`incomplete` — отклонять до API, не обходить).
+- CPA/CR — по основной цели (`primary_conversion_goal_id`: param > campaign
+  > account > none; блок `goal {id, label, source}` рядом с атрибуцией).
+- Перед оптимизацией читать журнал операций (`get_operation_log`) и считать
+  CPA по основной цели. Код журнала не трогать.

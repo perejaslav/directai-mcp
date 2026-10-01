@@ -435,6 +435,7 @@ def write_dump_sections(
     *,
     raw_truncated: bool | None = None,
     complete_override: bool | None = None,
+    lookup: dict | None = None,
 ) -> str:
     """v1.4.0: конверт с произвольными секциями + manifest + describe.
 
@@ -503,6 +504,7 @@ def write_dump_sections(
         },
         "warnings": list(warnings),
         "sections": norm_sections,
+        **({"lookup": lookup} if lookup is not None else {}),
     }
     if not tally.get("pages") and complete is not True:
         envelope["warnings"].append(
@@ -532,6 +534,8 @@ def write_dump_sections(
         "pagination_complete": complete,
         "truncated": raw_cut,
         **({"scope": scope} if scope else {}),
+        **({"lookup_status": (lookup or {}).get("lookup_status")}
+           if lookup is not None else {}),
     })
     return f"Dump-конверт: {path} (manifest: {manifest})."
 
@@ -556,12 +560,14 @@ def _dump_envelope_line(
     dump_extra: dict[str, list] | None = None,
     dump_truncated: bool | None = None,
     dump_complete: bool | None = None,
+    dump_lookup: dict | None = None,
 ) -> str:
     """v1.4.0: односекционный конверт (делегирует write_dump_sections).
 
     v1.4.1: `display_truncated` — обрезка display для чата;
     `dump_truncated`/`dump_complete` — явная полнота raw для не-Direct
     источников (иначе вывод из tally).
+    v1.6.0 (B1): `dump_lookup` — статус поиска в конверт и manifest.
     """
     return write_dump_sections(
         ctx,
@@ -585,6 +591,7 @@ def _dump_envelope_line(
         dump_tag=dump_tag,
         raw_truncated=dump_truncated,
         complete_override=dump_complete,
+        lookup=dump_lookup,
     )
 
 
@@ -630,6 +637,7 @@ def finalize(
     # не влияет.
     dump_truncated: bool | None = None,
     dump_complete: bool | None = None,
+    dump_lookup: dict | None = None,
 ) -> str:
     """Cap rows at 200, render table, autosave full result on cut or demand.
 
@@ -723,6 +731,7 @@ def finalize(
             dump_extra=dump_extra,
             dump_truncated=dump_truncated,
             dump_complete=dump_complete,
+            dump_lookup=dump_lookup,
         )
     if output == "inline" and len(rows) > shown_cap and ctx.data_dir is not None:
         # Legacy-автосохранение при обрезке (шаг 1.1-3, правка: единый

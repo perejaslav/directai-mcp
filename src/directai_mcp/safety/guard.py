@@ -69,6 +69,65 @@ async def _campaigns_by_id(
     return {int(i["Id"]): i for i in items if i.get("Id") is not None}
 
 
+async def campaign_lookup(
+    ctx: Ctx, client: DirectClient, login: str, campaign_id: int, days: int = 90
+) -> dict:
+    """B1: статус кампании для guard (Campaigns API + один лёгкий Reports).
+
+    Возвращает словарь build_lookup. Ошибка API — failed, без трактовки.
+    """
+    from directai_mcp.api.errors import DirectError
+    from directai_mcp.catalog import lookup as _lookup
+
+    try:
+        found = await _campaigns_by_id(client, login, [int(campaign_id)])
+    except DirectError as e:
+        return _lookup.failed(f"ошибка API при проверке кампании: {e.human_message()}.")
+    item = found.get(int(campaign_id))
+    if item is not None:
+        return _lookup.resolved_configured("объект найден в Campaigns API.")
+    # Campaigns API пуст — один лёгкий отчёт для statistics_only.
+    try:
+        from datetime import datetime, timedelta
+
+        days_int = max(1, min(int(days), 365))
+        today = datetime.now().astimezone().date()
+        definition = {
+            "SelectionCriteria": {
+                "DateFrom": (today - timedelta(days=days_int)).isoformat(),
+                "DateTo": (today - timedelta(days=1)).isoformat(),
+                "Filter": [{
+                    "Field": "CampaignId",
+                    "Operator": "IN",
+                    "Values": [str(int(campaign_id))],
+                }],
+            },
+            "FieldNames": ["CampaignId", "Impressions", "Clicks"],
+            "ReportType": "CAMPAIGN_PERFORMANCE_REPORT",
+            "DateRangeType": "CUSTOM_DATE",
+            "Format": "TSV",
+            "IncludeVAT": "YES" if ctx.settings.include_vat else "NO",
+        }
+        reports = ctx.reports()
+        try:
+            _cols, rows = await reports.fetch(login, definition)
+        finally:
+            await reports.aclose()
+        if rows:
+            return _lookup.resolved_statistics_only()
+        return _lookup.not_observed(f"последние {days_int} дней")
+    except Exception as e:  # noqa: BLE001
+        return _lookup.failed(f"проверка Reports не удалась: {e}.")
+
+
+def lookup_allows_write(lookup: dict) -> bool:
+    """B1: запись только при resolved+configured."""
+    return (
+        lookup.get("lookup_status") == "resolved"
+        and lookup.get("presence") == "configured"
+    )
+
+
 async def _campaign_name(
     client: DirectClient, login: str, campaign_id: int
 ) -> str | None:
@@ -84,8 +143,26 @@ def _is_test(name: str | None) -> bool:
 async def require_test_campaign(
     ctx: Ctx, client: DirectClient, login: str, campaign_id: int
 ) -> None:
-    name = await _campaign_name(client, login, campaign_id)
-    if name is None:
+    """B1: один Campaigns.get — и статус, и имя (без дубля запросов)."""
+    from directai_mcp.api.errors import DirectError
+    from directai_mcp.catalog import lookup as _lookup
+    from directai_mcp.catalog.lookup import guard_message as _guard_msg
+
+    try:
+        found = await _campaigns_by_id(client, login, [int(campaign_id)])
+    except DirectError as e:
+        raise GuardBlocked(
+            f"{_lookup.failed(f'ошибка API: {e.human_message()}.')['message']} "
+            f"{GUARD_NOTICE}"
+        ) from None
+    item = found.get(int(campaign_id))
+    if item is None:
+        lookup = await campaign_lookup(ctx, client, login, campaign_id)
+        # campaign_lookup повторит Campaigns.get (дешёвый и кэшируемый);
+        # точный статус важнее одного запроса при отсутствии объекта.
+        raise GuardBlocked(_guard_msg(lookup, campaign_id))
+    name = str(item.get("Name") or "")
+    if not name:
         raise GuardBlocked(f"кампания {campaign_id} не найдена в {login}.")
     if not _is_test(name):
         raise GuardBlocked(

@@ -25,6 +25,11 @@ role = "Поиск, регионы"
 [aliases.rsya]
 login = "client-c"
 role = "РСЯ, регионы"
+# v1.6.0 (B3): основная цель — вымышленные ID (пример):
+# primary_conversion_goal_id = 900000123
+# Переопределение по кампании (вымышленный ID):
+# [aliases.rsya.campaigns.900000456]
+# primary_conversion_goal_id = 900000456
 
 [metrika]
 # counter_id = 0

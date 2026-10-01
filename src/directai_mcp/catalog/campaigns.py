@@ -363,11 +363,16 @@ def _detail(
 class CampaignsListParams(GetActionParams):
     include_archived: bool = False
     campaign_ids: list[int] = Field(default_factory=list)
+    # B1: поиск по имени/подстроке (ambiguous при >1); lookup_days — период
+    # проверки Reports для statistics_only (по умолчанию 90 дней).
+    search: str | None = None
+    lookup_days: int = 90
 
 
 class CampaignsGetParams(GetActionParams):
     campaign_ids: list[int] = Field(min_length=1)
     full: bool = False
+    lookup_days: int = 90
 
 
 class CampaignsStateParams(GetActionParams):
@@ -392,6 +397,66 @@ def _context(ctx: Ctx, name: str, entries: list[AccountEntry], extra: str = "") 
     mark = "[ПЕСОЧНИЦА] " if ctx.sandbox else ""
     accounts = ", ".join(e.login for e in entries)
     return f"{mark}{name}: {accounts}{extra}."
+
+
+async def _reports_has_data(
+    ctx: Ctx,
+    entries: list[AccountEntry],
+    campaign_ids: list[int],
+    days: int = 90,
+) -> bool:
+    """B1: лёгкий отчёт CAMPAIGN_PERFORMANCE_REPORT для statistics_only.
+
+    Только когда Campaigns API вернул пусто по явному ID. Поля CampaignId,
+    Impressions/Clicks; период по умолчанию 90 дней (переопределяется).
+    """
+    from datetime import datetime, timedelta
+
+    from directai_mcp.api.errors import DirectError
+
+    if not campaign_ids or not entries:
+        return False
+    try:
+        days_int = max(1, min(int(days), 365))
+    except (TypeError, ValueError):
+        days_int = 90
+    today = datetime.now().astimezone().date()
+    date_to = (today - timedelta(days=1)).isoformat()
+    date_from = (today - timedelta(days=days_int)).isoformat()
+    client = ctx.reports()
+    try:
+        import asyncio as _asyncio
+
+        sem = _asyncio.Semaphore(3)
+
+        async def _one(entry: AccountEntry) -> bool:
+            definition = {
+                "SelectionCriteria": {
+                    "DateFrom": date_from,
+                    "DateTo": date_to,
+                    "Filter": [{
+                        "Field": "CampaignId",
+                        "Operator": "IN",
+                        "Values": [str(i) for i in campaign_ids],
+                    }],
+                },
+                "FieldNames": ["CampaignId", "Impressions", "Clicks"],
+                "ReportType": "CAMPAIGN_PERFORMANCE_REPORT",
+                "DateRangeType": "CUSTOM_DATE",
+                "Format": "TSV",
+                "IncludeVAT": "YES" if ctx.settings.include_vat else "NO",
+            }
+            try:
+                async with sem:
+                    _cols, rows = await client.fetch(entry.login, definition)
+            except DirectError:
+                return False
+            return bool(rows)
+
+        results = await _asyncio.gather(*(_one(e) for e in entries))
+        return bool(any(results))
+    finally:
+        await client.aclose()
 
 
 @action(
@@ -443,7 +508,51 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
     note = (
         ", архивные исключены" if not params.include_archived else ", включая архивные"
     )
-    return finalize(
+    # B1: типизированный статус на уровне ответа.
+    from directai_mcp.catalog import lookup as _lookup
+
+    api_errors = [p for _, p in results if isinstance(p, DirectError)]
+    if api_errors and not rows:
+        look = _lookup.failed(
+            "ошибка API при campaigns_list; код ошибки Директа — в строке выше. "
+            "Не трактовать как «пусто»."
+        )
+    elif params.search:
+        needle = params.search.strip().casefold()
+        hits = [r for r in rows if needle in str(r.get("Name") or "").casefold()]
+        if len(hits) > 1:
+            look = _lookup.ambiguous([
+                {"id": str(r.get("Id")), "name": r.get("Name"),
+                 "state": r.get("State")} for r in hits
+            ])
+        elif len(hits) == 1:
+            look = _lookup.resolved_configured(
+                "поиск по имени дал ровно одно совпадение.")
+        else:
+            look = _lookup.not_observed("поиск по имени, без периода Reports")
+    elif not rows:
+        if not params.campaign_ids:
+            look = _lookup.build_lookup(
+                "resolved", None, False,
+                _lookup.empty_list_message(
+                    [e.login for e, _ in results], "States/Ids"),
+            )
+        else:
+            look = _lookup.build_lookup(
+                "not_observed", None, False,
+                "нет ни в Campaigns API, ни проверка Reports не запускалась "
+                "(только campaigns_get проверяет Reports). "
+                "Не утверждается, что кампании не существует.",
+            )
+    else:
+        if tally.get("complete") is False:
+            look = _lookup.incomplete(
+                "ответ частичный: пагинация Campaigns.get не завершена; "
+                "проверено не всё.")
+        else:
+            look = _lookup.resolved_configured(
+                f"найдено кампаний: {len(rows)}.")
+    out = finalize(
         ctx,
         _context(ctx, "campaigns_list", [e for e, _ in results], note),
         "campaigns_list",
@@ -466,7 +575,9 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
         dump_tally=tally,
         dump_logins=[e.login for e, _ in results],
         dump_scope="campaign" if params.campaign_ids else "cabinet",
-    ) + f"\n\n{version_footer()}"
+        dump_lookup=look,
+    )
+    return out + f"\n{_lookup.lookup_line(look)}\n\n{version_footer()}"
 
 
 @action(
@@ -630,6 +741,38 @@ async def _get(ctx: Ctx, params: BaseModel) -> str:
             "SearchResults", "ProductGallery", "DynamicPlaces",
             "Maps", "SearchOrganizationList"],
     }
+    # B1: типизированный статус. Reports-проверка — только когда Campaigns API
+    # вернул пусто по явному ID (один лёгкий отчёт).
+    from directai_mcp.catalog import lookup as _lookup
+
+    api_errors = [p for _, p in results if isinstance(p, DirectError)]
+    found_ids = {str(r.get("Id")) for r in rows if r.get("Id") is not None}
+    want_ids = [str(c) for c in params.campaign_ids]
+    missing = [c for c in want_ids if c not in found_ids]
+    if api_errors and not rows:
+        look = _lookup.failed(
+            "ошибка API при campaigns_get; код ошибки Директа — в строке выше. "
+            "Не трактовать как «пусто».")
+    elif rows and not missing:
+        if tally.get("complete") is False:
+            look = _lookup.incomplete(
+                "ответ частичный: пагинация Campaigns.get не завершена; "
+                "проверено не всё.")
+        else:
+            look = _lookup.resolved_configured("объект найден в Campaigns API.")
+    elif rows and missing:
+        look = _lookup.incomplete(
+            f"ответ частичный: не найдены в Campaigns API: {', '.join(missing)}; "
+            f"найдено: {', '.join(sorted(found_ids)) or '—'}.")
+    else:
+        has_data = await _reports_has_data(
+            ctx, [e for e, _ in results], params.campaign_ids,
+            params.lookup_days)
+        period_text = f"последние {params.lookup_days} дней"
+        if has_data:
+            look = _lookup.resolved_statistics_only()
+        else:
+            look = _lookup.not_observed(period_text)
     out = finalize(
         ctx,
         _context(ctx, "campaigns_get", [e for e, _ in results]),
@@ -655,6 +798,7 @@ async def _get(ctx: Ctx, params: BaseModel) -> str:
         dump_tally=tally,
         dump_logins=[e.login for e, _ in results],
         dump_scope="campaign",
+        dump_lookup=look,
     )
     if details:
         out += "\n\n" + "\n\n".join(details)
@@ -664,6 +808,7 @@ async def _get(ctx: Ctx, params: BaseModel) -> str:
             out += (f"- кампания {_n.get('campaign_id')}: "
                     f"{_n.get('field')} ({_n.get('status')}, с {_n.get('since')}): "
                     f"{_n.get('message')} Текущее: {_n.get('value')}.\n")
+    out += f"\n{_lookup.lookup_line(look)}"
     return out + f"\n\n{version_footer()}"
 
 

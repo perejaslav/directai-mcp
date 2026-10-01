@@ -466,3 +466,42 @@ if ($LASTEXITCODE -ne 0) {
 `effective=null`, `source="not_reported"` — только если модели действительно
 нет. Без целей Reports игнорирует AttributionModels (фактически LC) —
 это помечается в ответе отдельно.
+
+## 11. Статусы поиска (B1, v1.6.0)
+
+Каждый ответ `campaigns_get`/`campaigns_list` несёт строку
+`Статус поиска: <lookup_status>, presence=..., proves_account_empty=...`
+и то же в dump-конверте/manifest (`lookup_status`).
+
+| lookup_status | Когда | presence |
+|---|---|---|
+| `resolved` | объект найден в Campaigns API | `configured` |
+| `resolved` | в Campaigns API нет, в Reports есть данные (архив/удалена/чужой доступ) | `statistics_only` |
+| `not_observed` | нет ни в API, ни в Reports за проверенный период (период указан в message). Не утверждается, что кампании не существует | `null` |
+| `ambiguous` | поиск по имени/подстроке дал >1 совпадения; возвращаются кандидаты (id, name, state) | `null` |
+| `incomplete` | ответ частичный (пагинация/лимит/ошибка части запросов); указано, что не проверено | `null` |
+| `failed` | ошибка API/сети; код ошибки Директа, без трактовки как «пусто» | `null` |
+
+Проверка Reports для `statistics_only` — только когда Campaigns API вернул
+пусто по явному ID; один лёгкий отчёт (`CAMPAIGN_PERFORMANCE_REPORT`,
+`CampaignId`, `Impressions`/`Clicks`, период по умолчанию 90 дней,
+параметр `lookup_days` переопределяет). Пустой `campaigns_list` —
+`proves_account_empty=false` + причины (фильтр, права, логин):
+пусто ≠ объекта нет. Запись разрешена только при `resolved+configured`
+(guard отклоняет остальное до API).
+
+## 12. Основная цель (B3, v1.6.0)
+
+`accounts.toml`: необязательное поле кабинета `primary_conversion_goal_id`
+(вымышленный пример: `900000123`) и переопределение по кампании
+`[aliases.<имя>.campaigns.<campaign_id>] primary_conversion_goal_id`
+(также `[accounts.<имя>.campaigns.<id>]`, пример: `900000456`).
+Приоритет: явный параметр запроса `primary_goal` > кампания > кабинет > нет.
+Валидация: целое > 0; служебные `12`/`13` допустимы, но `check` предупреждает
+с расшифровкой (вовлечённые сессии / все приоритетные цели); сверка с целями
+Метрики — best-effort, отсутствие доступа — предупреждение, не ошибка.
+`stats_*`/`stats_compare`: блок `Цель: id=..., label=..., source=param|campaign|account|none`
+рядом с атрибуцией; CPA/CR — по этой цели; при `source=none` — как в v1.5.0
++ warning «основная цель не задана, CPA по всем целям».
+Правило для агентов: перед оптимизацией читать журнал операций
+(`get_operation_log`) и считать CPA по основной цели.

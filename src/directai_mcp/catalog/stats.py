@@ -686,6 +686,40 @@ def attribution_line(ctx: Ctx, params) -> str:
             f"source={info['source']}.")
 
 
+def effective_primary_goal(ctx: Ctx, params) -> tuple[str | None, str]:
+    """B3: основная цель по приоритету param > campaign > account > none."""
+    from directai_mcp.config import resolve_primary_goal
+
+    param = getattr(params, "primary_goal", None) or None
+    cids = list(getattr(params, "campaign_ids", []) or [])
+    account = getattr(params, "account", "all")
+    gid, source = resolve_primary_goal(ctx.settings, account, cids, param)
+    return gid, source
+
+
+def goal_info(ctx: Ctx, params, effective: tuple[str | None, str] | None = None) -> dict:
+    """B3: {id, label, source} рядом с блоком атрибуции (A6)."""
+    from directai_mcp.catalog.common import goal_label
+
+    gid, source = effective if effective is not None else effective_primary_goal(ctx, params)
+    label = (
+        goal_label(gid, ctx.settings.goal_names, ctx.settings.goal_counters)
+        if gid
+        else "—"
+    )
+    return {"id": gid, "label": label, "source": source}
+
+
+def goal_line(ctx: Ctx, params, effective: tuple[str | None, str] | None = None) -> str:
+    """B3: однострочный блок цели + warning при source=none."""
+    info = goal_info(ctx, params, effective)
+    gid = info["id"] or "—"
+    base = f"Цель: id={gid}, label={info['label']}, source={info['source']}."
+    if info["source"] == "none":
+        base += " Внимание: основная цель не задана, CPA по всем целям."
+    return base
+
+
 def extract_campaign_goals(item: dict, include_engaged: bool = False) -> set[int]:
     """Key goal ids from Campaigns.get item (PriorityGoals + strategy).
 
@@ -1902,7 +1936,7 @@ def _population_totals(
         model_col = True
     if union_goals and key_rows:
         key_t = totals(key_rows)
-        pg = params.primary_goal or None
+        pg = params.primary_goal or effective_primary_goal(ctx, params)[0]
         if pg:
             key_t["Conversions"], key_t["Revenue"] = _key_sums(key_rows, pg)
         if mixing:
@@ -1998,25 +2032,35 @@ def _context(
             f"режим: {params.goals_mode}{suffix}."
         )
         text += " " + attribution_line(ctx, params)
+        # B3: блок цели рядом с атрибуцией; CPA/CR по primary при source!=none.
+        eff_gid, eff_src = effective_primary_goal(ctx, params)
+        if not params.primary_goal and eff_gid:
+            eff_primary: str | None = eff_gid
+        else:
+            eff_primary = params.primary_goal or None
+        text += " " + goal_line(ctx, params, (eff_gid, eff_src))
         if mixed:
             text += mixed
         # v1.1.19: дубли визитов между целями + primary.
-        mode = conv_mode(len(goals), params.primary_goal)
+        mode = conv_mode(len(goals), eff_primary)
         if mode == "sum":
             text += f" {DUP_NOTE.capitalize()}."
-        elif mode == "primary" and params.primary_goal:
+        elif mode == "primary" and eff_primary:
             label = goal_label(
-                params.primary_goal,
+                eff_primary,
                 ctx.settings.goal_names,
                 ctx.settings.goal_counters,
             )
             text += f" Строки — по цели {label}."
         return text
     # v1.1.8: без целей Reports игнорирует AttributionModels — фактически LC.
+    # B3: блок цели и в этом случае (source=campaign/account/none).
+    _eg, _es = effective_primary_goal(ctx, params)
+    tail = " " + goal_line(ctx, params, (_eg, _es))
     return (
         f"{mark}{name}: {accounts}, {_period_label(params)}, расход {vat}, "
         f"атрибуция: LC (AUTO неприменима без целей; "
-        f"у кампании нет ключевых целей){suffix}."
+        f"у кампании нет ключевых целей){suffix}.{tail}"
     )
 
 
@@ -2133,7 +2177,9 @@ async def _run_report(
         union = sorted({g for goals in goals_by_login.values() for g in goals})
         goals_info = (union, source)
         # v1.1.19: primary проверяем до запросов (fail fast, без API).
-        check_primary(union, params.primary_goal)
+        # B3: строгая проверка — только явный primary_goal.
+        if params.primary_goal:
+            check_primary(union, params.primary_goal)
     requested = params.limit or ctx.settings.max_rows
 
     client = ctx.reports()
@@ -2409,10 +2455,16 @@ async def _run_report(
         )
     include_share = name != "stats_summary"
     # v1.1.19: режим конверсий строк (single/sum/primary) + имена колонок.
+    # B3: primary из конфига, если в запросе не задан.
     union_goals = goals_info[0] if goals_info and goals_info[0] else []
-    mode = conv_mode(len(union_goals), params.primary_goal)
+    _eff, _src = effective_primary_goal(ctx, params)
+    _calc_primary = params.primary_goal or _eff
+    # B3: цель из конфига — в отчёт, если целей нет вообще.
+    if not union_goals and _eff and definition_override is None:
+        union_goals = [_eff]
+    mode = conv_mode(len(union_goals), _calc_primary)
     conv_col, cpa_col, cr_col = derived_names(mode)
-    primary_gid = params.primary_goal if mode == "primary" else None
+    primary_gid = _calc_primary if mode == "primary" else None
     add_derived(rows, total_cost, include_share,
                 conv_col, cpa_col, cr_col, primary_gid)
     if name == "stats_placements" and isinstance(params, PlacementsParams):
@@ -2548,10 +2600,14 @@ async def _run_custom(ctx: Ctx, params: CustomParams) -> str:
     union = sorted({g for goals in goals_by_login.values() for g in goals})
     goals_info: tuple[list[str], str] = (union, source if union else "none")
     # v1.1.19: primary проверяем до запросов; режим имён колонок.
-    check_primary(union, params.primary_goal)
-    _mode = conv_mode(len(union), params.primary_goal)
+    # B3: строгая проверка — только явный primary_goal.
+    if params.primary_goal:
+        check_primary(union, params.primary_goal)
+    _eff_c, _src_c = effective_primary_goal(ctx, params)
+    _calc_c = params.primary_goal or _eff_c
+    _mode = conv_mode(len(union), _calc_c)
     conv_col, cpa_col, cr_col = derived_names(_mode)
-    primary_gid = params.primary_goal if _mode == "primary" else None
+    primary_gid = _calc_c if _mode == "primary" else None
 
     async def _custom_definitions(
         entry_login: str, with_goals: bool = True, with_dims: bool = True
@@ -2768,13 +2824,14 @@ COMPARE_METRICS: tuple[tuple[str, str, str], ...] = (
 
 
 def _compare_dataset(
-    agg_rows: list[dict], conv_col_present: bool
+    agg_rows: list[dict], conv_col_present: bool, primary_gid: str | None = None
 ) -> dict | None:
     """v1.1.22: метрики периода из агрегатных строк (сырые Decimal, без округлений).
 
     None — данных нет (пустой ответ или ошибка уже зафиксирована вызывающим).
     Доли/средние (BounceRate, позиции) — только значение агрегата, никакого
     суммирования/усреднения по строкам.
+    B3: при primary_gid конверсии — только по этой цели.
     """
     from directai_mcp.fmt import to_decimal as _dec
 
@@ -2784,7 +2841,18 @@ def _compare_dataset(
     impr = base.get("Impressions") or Decimal(0)
     clicks = base.get("Clicks") or Decimal(0)
     cost = base.get("Cost") or Decimal(0)
-    conv = base.get("Conversions") or Decimal(0)
+    if primary_gid:
+        conv = Decimal(0)
+        found = False
+        for r in agg_rows:
+            val = row_goal_conversions(r, primary_gid)
+            if val is not None:
+                found = True
+                conv += val
+        if not found:
+            conv = base.get("Conversions") or Decimal(0)
+    else:
+        conv = base.get("Conversions") or Decimal(0)
     first = agg_rows[0]
     out: dict = {
         "Impressions": impr,
@@ -2899,17 +2967,23 @@ def _compare_context(
         head += (f" атрибуция: {attribution}, целей: {len(goals)} "
                  f"({src_label}), режим: {params.goals_mode}.")
         head += " " + attribution_line(ctx, params)
-        mode = conv_mode(len(goals), params.primary_goal)
+        # B3: блок цели рядом с атрибуцией.
+        _eg, _es = effective_primary_goal(ctx, params)
+        _calc = params.primary_goal or _eg
+        head += " " + goal_line(ctx, params, (_eg, _es))
+        mode = conv_mode(len(goals), _calc)
         if mode == "sum":
             head += f" {DUP_NOTE.capitalize()}."
-        elif mode == "primary" and params.primary_goal:
-            label = goal_label(params.primary_goal, ctx.settings.goal_names,
+        elif mode == "primary" and _calc:
+            label = goal_label(_calc, ctx.settings.goal_names,
                                ctx.settings.goal_counters)
             head += f" Строки — по цели {label}."
     else:
         # v1.1.8: без целей Reports игнорирует AttributionModels — фактически LC.
         head += (" атрибуция: LC (AUTO неприменима без целей; "
                  "у кампании нет ключевых целей).")
+        _eg2, _es2 = effective_primary_goal(ctx, params)
+        head += " " + goal_line(ctx, params, (_eg2, _es2))
     return head
 
 
@@ -2942,7 +3016,17 @@ async def _run_compare(ctx: Ctx, params: BaseModel) -> str:
     # with_conversions, campaign_ids, goals_mode, attribution).
     goals_by_login, source = await _effective_goals(ctx, entries, params)  # type: ignore[arg-type]
     union = sorted({g for goals in goals_by_login.values() for g in goals})
-    check_primary(union, params.primary_goal)
+    # B3: строгая проверка — только для явного primary_goal; цель из конфига
+    # вне union не валит отчёт (fallback на сумму), CPA всё равно по ней.
+    if params.primary_goal:
+        check_primary(union, params.primary_goal)
+    _eff_cmp, _src_cmp = effective_primary_goal(ctx, params)
+    _calc_cmp = params.primary_goal or _eff_cmp
+    if _calc_cmp and _calc_cmp not in union:
+        try:
+            check_primary(union, _calc_cmp)
+        except ValueError:
+            pass
 
     dims = list(COMPARE_GROUP_DIMS.get(params.group_by, []))
     report_type = "CUSTOM_REPORT" if dims else "CAMPAIGN_PERFORMANCE_REPORT"
@@ -3006,11 +3090,11 @@ async def _run_compare(ctx: Ctx, params: BaseModel) -> str:
             # (суммирование/усреднение запрещено) → метрики отсутствуют.
             if agg_rows:
                 datasets.append(
-                    _compare_dataset(agg_rows, _has_conv_cols(agg_rows)))
+                    _compare_dataset(agg_rows, _has_conv_cols(agg_rows), _calc_cmp))
             elif not dims and detail_rows:
                 datasets.append(
                     _compare_dataset(detail_rows,
-                                     _has_conv_cols(detail_rows)))
+                                     _has_conv_cols(detail_rows), _calc_cmp))
             else:
                 datasets.append(None)
             group_rows.append(detail_rows)
@@ -3031,8 +3115,8 @@ async def _run_compare(ctx: Ctx, params: BaseModel) -> str:
                 if key not in keys:
                     keys[key] = {}
                     order.append(key)
-        per_a = _group_datasets(group_rows[0], dims)
-        per_b = _group_datasets(group_rows[1], dims)
+        per_a = _group_datasets(group_rows[0], dims, _calc_cmp)
+        per_b = _group_datasets(group_rows[1], dims, _calc_cmp)
         # v1.1.22: первая строка — Итого строго из агрегата (доли/средние
         # нельзя складывать/усреднять по группам), далее группы.
         rows.extend(_metric_rows("Итого", data_a, data_b))
@@ -3059,9 +3143,12 @@ async def _run_compare(ctx: Ctx, params: BaseModel) -> str:
 
 
 def _group_datasets(
-    period_rows: list[dict], dims: list[str]
+    period_rows: list[dict], dims: list[str], primary_gid: str | None = None
 ) -> dict[tuple, dict]:
-    """v1.1.22: метрики периода по группам; доли/средние — значение строки API."""
+    """v1.1.22: метрики периода по группам; доли/средние — значение строки API.
+
+    B3: при primary_gid конверсии — только по этой цели.
+    """
     from directai_mcp.fmt import to_decimal as _dec
 
     grouped: dict[tuple, list[dict]] = {}
@@ -3073,7 +3160,18 @@ def _group_datasets(
         impr = base.get("Impressions") or Decimal(0)
         clicks = base.get("Clicks") or Decimal(0)
         cost = base.get("Cost") or Decimal(0)
-        conv = base.get("Conversions") or Decimal(0)
+        if primary_gid:
+            conv = Decimal(0)
+            found = False
+            for r in sub:
+                val = row_goal_conversions(r, primary_gid)
+                if val is not None:
+                    found = True
+                    conv += val
+            if not found:
+                conv = base.get("Conversions") or Decimal(0)
+        else:
+            conv = base.get("Conversions") or Decimal(0)
         first = sub[0]
         metrics: dict = {
             "Impressions": impr,

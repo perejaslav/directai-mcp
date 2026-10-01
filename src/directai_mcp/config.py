@@ -70,6 +70,12 @@ class Settings:
     # Аудитории: запись выключена по умолчанию (мёрж feat/audience-api в main).
     # Включение — только явным [audience] write_enabled=true в accounts.toml.
     audience_write_enabled: bool = False
+    # v1.6.0 (B3): основная цель. Ключ — алиас кабинета, значение — id цели строкой.
+    primary_goal_by_account: dict[str, str] = field(default_factory=dict)
+    # v1.6.0 (B3): переопределение по кампании. Ключ — (алиас, campaign_id).
+    primary_goal_by_campaign: dict[tuple[str, str], str] = field(
+        default_factory=dict
+    )
 
 
 def data_dir() -> Path:
@@ -178,6 +184,41 @@ def load_settings(path: Path | None = None) -> Settings:
         raise ConfigError(f"invalid [audience] section in {cfg_path}")
     audience_write_enabled = bool(audience_section.get("write_enabled", False))
 
+    # v1.6.0 (B3): основная цель. Уровень кабинета:
+    # [aliases.<имя>] primary_conversion_goal_id (также [accounts.<имя>]
+    # legacy). Переопределение по кампании:
+    # [aliases.<имя>.campaigns.<campaign_id>] primary_conversion_goal_id
+    # (также [accounts.<имя>.campaigns.<campaign_id>] по ТЗ).
+    primary_by_account: dict[str, str] = {}
+    primary_by_campaign: dict[tuple[str, str], str] = {}
+    for section_name in ("aliases", "accounts"):
+        raw_section = data.get(section_name, {}) or {}
+        if not isinstance(raw_section, dict):
+            continue
+        for alias, entry in raw_section.items():
+            if alias == "exclude" or not isinstance(entry, dict):
+                continue
+            if not entry.get("login") and section_name == "accounts":
+                continue
+            if entry.get("primary_conversion_goal_id") is not None:
+                primary_by_account[str(alias)] = _parse_primary_goal(
+                    entry.get("primary_conversion_goal_id"),
+                    f"{section_name}.{alias} in {cfg_path}",
+                )
+            campaigns = entry.get("campaigns")
+            if isinstance(campaigns, dict):
+                for cid, centry in campaigns.items():
+                    if not isinstance(centry, dict):
+                        continue
+                    if centry.get("primary_conversion_goal_id") is not None:
+                        primary_by_campaign[(str(alias), str(cid))] = (
+                            _parse_primary_goal(
+                                centry.get("primary_conversion_goal_id"),
+                                f"{section_name}.{alias}.campaigns.{cid} "
+                                f"in {cfg_path}",
+                            )
+                        )
+
     return Settings(
         auth_login=auth_login,
         include_vat=include_vat,
@@ -198,7 +239,93 @@ def load_settings(path: Path | None = None) -> Settings:
         audience_write_enabled=audience_write_enabled,
         units_warn_pct=units_warn_pct,
         counter_visits_warn_pct=counter_visits_warn_pct,
+        primary_goal_by_account=primary_by_account,
+        primary_goal_by_campaign=primary_by_campaign,
     )
+
+
+def _parse_primary_goal(value: object, where: str) -> str:
+    """B3: целое > 0; служебные 12/13 допустимы (check предупредит)."""
+    try:
+        num = int(str(value).strip())  # type: ignore[arg-type]
+    except (TypeError, ValueError, AttributeError):
+        raise ConfigError(f"bad primary_conversion_goal_id in {where}") from None
+    if num <= 0:
+        raise ConfigError(f"bad primary_conversion_goal_id in {where}: want int > 0")
+    return str(num)
+
+
+def primary_goal_warnings(settings: Settings) -> list[str]:
+    """B3: предупреждения check для служебных целей 12/13 (из A5)."""
+    from directai_mcp.catalog.common import SERVICE_GOALS
+
+    out: list[str] = []
+    seen: dict[str, list[str]] = {}
+    for alias, gid in settings.primary_goal_by_account.items():
+        seen.setdefault(gid, []).append(f"кабинет {alias}")
+    for (alias, cid), gid in settings.primary_goal_by_campaign.items():
+        seen.setdefault(gid, []).append(f"кампания {cid} ({alias})")
+    for gid, where in seen.items():
+        try:
+            num = int(gid)
+        except ValueError:
+            continue
+        if num in SERVICE_GOALS:
+            out.append(
+                f"primary_conversion_goal_id={gid} ({SERVICE_GOALS[num]}, "
+                f"служебное): {', '.join(where)}."
+            )
+    return out
+
+
+def resolve_primary_goal(
+    settings: Settings,
+    account: str,
+    campaign_ids: list[int] | tuple,
+    param_primary: str | None,
+) -> tuple[str | None, str]:
+    """B3: приоритет param > campaign > account > none.
+
+    campaign — только при ровно одном campaign_id (иначе неоднозначно).
+    account — по алиасу или логину (первое совпадение).
+    """
+    if param_primary:
+        return str(param_primary), "param"
+    cids = [str(c) for c in (campaign_ids or [])]
+    if len(cids) == 1:
+        cid = cids[0]
+        merged_acc = dict(settings.aliases) | dict(settings.accounts)
+        for (alias, key), gid in settings.primary_goal_by_campaign.items():
+            if key == cid and (
+                account == alias
+                or merged_acc.get(alias, AccountEntry(alias, "")).login
+                == account
+                or account in ("all", "active")
+            ):
+                return gid, "campaign"
+        # ТЗ-форма [accounts.<имя>.campaigns.<id>] уже слита выше;
+        # поиск только по id кампании при account=all/active.
+        if account in ("all", "active"):
+            hits = {g for (a, k), g in settings.primary_goal_by_campaign.items()
+                    if k == cid}
+            if len(hits) == 1:
+                return next(iter(hits)), "campaign"
+    # Уровень кабинета: алиас или логин; при all/active — только если
+    # у всех затронутых один и тот же id, иначе none (не угадываем).
+    if account not in ("all", "active"):
+        entry_alias: str | None = None
+        merged = dict(settings.aliases) | dict(settings.accounts)
+        for alias, entry in merged.items():
+            if account == alias or account == entry.login:
+                entry_alias = alias
+                break
+        if entry_alias and entry_alias in settings.primary_goal_by_account:
+            return settings.primary_goal_by_account[entry_alias], "account"
+    else:
+        vals = set(settings.primary_goal_by_account.values())
+        if len(vals) == 1 and vals:
+            return next(iter(vals)), "account"
+    return None, "none"
 
 
 def cache_path(home: Path) -> Path:

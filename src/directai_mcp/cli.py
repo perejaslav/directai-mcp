@@ -174,9 +174,52 @@ async def _check_all(sandbox: bool) -> int:
         if line.startswith("FAIL"):
             ok = False
     print(await _check_audience(settings.auth_login, token))
+    for warn in _check_primary_goals(settings, token):
+        print(warn)
     if sandbox:
         print("[SANDBOX]")
     return 0 if ok else 1
+
+
+def _check_primary_goals(settings, token: str) -> list[str]:
+    """B3: валидация основной цели в check (предупреждения, не ошибки)."""
+    from directai_mcp.config import primary_goal_warnings
+
+    out: list[str] = []
+    for warn in primary_goal_warnings(settings):
+        out.append(f"ВНИМАНИЕ: {warn}")
+    ids: set[str] = set(settings.primary_goal_by_account.values()) | {
+        g for g in settings.primary_goal_by_campaign.values()
+    }
+    ids.discard("12")
+    ids.discard("13")
+    if not ids or not settings.counter_id:
+        if ids and not settings.counter_id:
+            out.append(
+                "ВНИМАНИЕ: primary_conversion_goal_id задан, но счётчик "
+                "Метрики не настроен — сверка с Метрикой пропущена (не ошибка)."
+            )
+        return out
+    try:
+        import json as _json
+
+        from directai_mcp.catalog.metrika_goals import _check_status, _mget
+
+        status, body = _mget(
+            token, f"/management/v1/counter/{settings.counter_id}/goals"
+        )
+        _check_status("metrika goals", status)
+        payload = _json.loads(body)
+        have = {str(g.get("id")) for g in payload.get("goals", []) if isinstance(g, dict)}
+        missing = sorted(i for i in ids if i not in have)
+        if missing:
+            out.append(
+                "ВНИМАНИЕ: целей нет у счётчика "
+                f"{settings.counter_id}: {', '.join(missing)} (не ошибка)."
+            )
+    except Exception as e:  # noqa: BLE001
+        out.append(f"ВНИМАНИЕ: сверка целей с Метрикой пропущена: {e} (не ошибка).")
+    return out
 
 
 async def _check_audience(auth_login: str, main_token: str) -> str:
