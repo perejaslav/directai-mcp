@@ -11,9 +11,9 @@ uv.lock is excluded (generated file: public package metadata with hex hashes).
 Prints only file + match count, never matched values.
 Exit 1 on any hit (commit blocked), 0 when clean.
 """
+import hashlib
 import os
 import re
-import hashlib
 import subprocess
 import sys
 
