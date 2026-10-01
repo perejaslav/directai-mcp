@@ -655,21 +655,35 @@ METRIKA_LEGACY_TO_CROSS_DEVICE = {
 def attribution_info(ctx: Ctx, params) -> dict:
     """A6: {requested, effective, source} для stats_* и stats_compare.
 
-    Reports API фактическую модель не возвращает — не выдумываем:
-    effective=None, source='not_reported'.
+    Модель из effective_attribution() подставляется в effective как
+    запрошенная у API; source — откуда взялась: 'api' (явно в параметрах
+    запроса), 'config' (дефолт accounts.toml). Дефолт AUTO тоже отправляется
+    в API вместе с целями (source='api'). null/not_reported — только если
+    модели действительно нет (пустой effective_attribution).
+    Без целей Reports игнорирует AttributionModels (фактически LC) —
+    это помечается вызывающим кодом, а не здесь.
     """
-    requested = list(getattr(params, "attribution", []) or []) \
-        or list(ctx.settings.attribution) or ["AUTO"]
-    return {"requested": requested, "effective": None,
-            "source": "not_reported"}
+    models = effective_attribution(ctx, params)
+    if not models:
+        return {"requested": [], "effective": None,
+                "source": "not_reported"}
+    if list(getattr(params, "attribution", []) or []):
+        source = "api"
+    elif list(ctx.settings.attribution):
+        source = "config"
+    else:
+        source = "api"  # дефолт AUTO, отправляем в API вместе с целями
+    return {"requested": list(models), "effective": list(models),
+            "source": source}
 
 
 def attribution_line(ctx: Ctx, params) -> str:
     """Однострочный блок атрибуции для ответов stats_*."""
     info = attribution_info(ctx, params)
     req = ",".join(info["requested"])
-    return (f"Атрибуция: requested={req}, effective=null, "
-            f"source={info['source']} (фактическую модель API не возвращает).")
+    eff = ",".join(info["effective"]) if info["effective"] else "null"
+    return (f"Атрибуция: requested={req}, effective={eff}, "
+            f"source={info['source']}.")
 
 
 def extract_campaign_goals(item: dict, include_engaged: bool = False) -> set[int]:
@@ -2884,6 +2898,7 @@ def _compare_context(
             source, "авто key: PriorityGoals+стратегия")
         head += (f" атрибуция: {attribution}, целей: {len(goals)} "
                  f"({src_label}), режим: {params.goals_mode}.")
+        head += " " + attribution_line(ctx, params)
         mode = conv_mode(len(goals), params.primary_goal)
         if mode == "sum":
             head += f" {DUP_NOTE.capitalize()}."

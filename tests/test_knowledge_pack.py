@@ -126,8 +126,10 @@ def test_a6_attribution_block(tmp_path):
 
     p = StatsParams()
     info = attribution_info(_ctx(tmp_path), p)
-    assert info["effective"] is None and info["source"] == "not_reported"
-    assert "effective=null" in attribution_line(_ctx(tmp_path), p)
+    assert info["effective"] == ["AUTO"] and info["source"] == "api"
+    assert "effective=AUTO" in attribution_line(_ctx(tmp_path), p)
+    info2 = attribution_info(_ctx(tmp_path), StatsParams(attribution=["FCCD"]))
+    assert info2["effective"] == ["FCCD"] and info2["source"] == "api"
 
 
 def test_campaigns_get_notices_offline(monkeypatch, tmp_path):

@@ -460,5 +460,9 @@ if ($LASTEXITCODE -ne 0) {
 | Директ | FCCD, LC, LSCCD, AUTO (прямого соответствия Метрике нет) |
 | Метрика (legacy → cross-device с 25.06.2026) | lastsign → cross_device_last_significant и др. |
 
-Фактическую модель Reports API не возвращает: `effective=null`,
-`source="not_reported"` (не выдумываем).
+Фактическая модель Reports API отдельно не возвращает: в `effective`
+подставляется запрошенная модель (`effective_attribution`), `source` —
+откуда взялась (`api` — явно в параметрах, `config` — дефолт accounts.toml).
+`effective=null`, `source="not_reported"` — только если модели действительно
+нет. Без целей Reports игнорирует AttributionModels (фактически LC) —
+это помечается в ответе отдельно.
