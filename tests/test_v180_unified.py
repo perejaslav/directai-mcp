@@ -374,3 +374,28 @@ async def test_moderate_blocked_by_default(tmp_path):
     )
     assert out.startswith("Заблокировано защитой")
     assert "модерация" in out.lower()
+
+
+# --- п.0 финала: guard блокирует стратегию/бюджет раньше маршрутизации ---
+
+async def test_guard_blocks_strategy_and_budget_both_types(tmp_path):
+    """Маршрутизация v501 в prepare недостижима: precheck режет до API."""
+    from directai_mcp.safety.guard import BUDGET_BLOCK
+
+    for campaign_type in ("UNIFIED_CAMPAIGN", "TEXT_CAMPAIGN"):
+        out = await do_plan_write(
+            _ctx(tmp_path),
+            "campaigns_update",
+            {"account": "t", "campaign_ids": [7],
+             "strategy": {"Search": {"BiddingStrategyType": "HIGHEST_POSITION"}}},
+        )
+        assert out.startswith("Заблокировано защитой"), campaign_type
+        assert BUDGET_BLOCK in out, campaign_type
+        out = await do_plan_write(
+            _ctx(tmp_path),
+            "campaigns_update",
+            {"account": "t", "campaign_ids": [7], "daily_budget": 500.0},
+        )
+        assert out.startswith("Заблокировано защитой"), campaign_type
+        assert BUDGET_BLOCK in out, campaign_type
+    assert len(PLANS) == 0
