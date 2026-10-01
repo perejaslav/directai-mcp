@@ -279,9 +279,9 @@ Credential Manager (`directai-mcp`) или переменная `DIRECTAI_TOKEN`
 
 | Действие | Что делает |
 |---|---|
-| `campaigns_create`, `campaigns_update`, `campaigns_state` | Создание, изменение, остановка/архив кампаний |
-| `adgroups_create`, `adgroups_update` | Создание и изменение групп |
-| `ads_create`, `ads_update`, `ads_state` | Создание, изменение, состояние объявлений |
+| `campaigns_create`, `campaigns_update`, `campaigns_state` | Создание (по умолчанию ЕПК), изменение, остановка/архив кампаний |
+| `adgroups_create`, `adgroups_update` | Создание и изменение групп (тип группы — из типа кампании) |
+| `ads_create`, `ads_update`, `ads_state` | Создание (для ЕПК — RESPONSIVE_AD), изменение, состояние объявлений |
 | `keywords_add`, `keywords_update`, `keywords_state` | Фразы: пакетное добавление, тексты, состояние |
 | `negatives_set` | Минус-фразы кампании/групп и общие наборы |
 | `extensions_create` | Ссылки, уточнения, изображения |
@@ -315,6 +315,25 @@ Credential Manager (`directai-mcp`) или переменная `DIRECTAI_TOKEN`
 ссылки/уточнения, регионы групп, минусы и площадки (добавление), ставки
 и корректировки; замена целиком (replace), пауза кампаний и объявлений,
 удаления — только в тестовых кампаниях `[TEST DirectAI]*`.
+
+## 5.1. Создание кампаний: ЕПК по умолчанию
+
+- `campaigns_create` создаёт `UNIFIED_CAMPAIGN` (ЕПК, запрос на `json/v501`).
+  Legacy `TEXT_CAMPAIGN` — только явным `campaign_type="TEXT_CAMPAIGN"`
+  с предупреждением «устаревший тип».
+- `campaigns_update`: блок стратегии и версия запроса — по типу кампании
+  (`UnifiedCampaign`/`v501` для ЕПК).
+- `adgroups_create`: тип группы API выводит из кампании; неизвестная
+  кампания или тип — отказ до API.
+- `ads_create`: для ЕПК используйте `responsive_ads` (`RESPONSIVE_AD`,
+  запрос на `v501`); `TEXT_AD` допустим, но API конвертирует его
+  (10251) — предупреждение требует подтверждения. Совместимость типа
+  группы/кампании проверяется до API. DisplayUrlPath обязателен
+  для обоих типов и сверяется в read-back.
+- Цепочка создания: кампания → группа → фразы → объявление отдельными
+  планами; модерация (`ads_state moderate`) в цепочку не входит и
+  заблокирована guard по умолчанию — только отдельным шагом
+  с явного решения пользователя.
 
 ## 6. Guard (защита)
 

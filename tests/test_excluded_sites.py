@@ -14,6 +14,7 @@ from directai_mcp.catalog.registry import ACTIONS, Ctx
 from directai_mcp.config import AccountEntry, Settings
 
 V5C = "https://api.direct.yandex.com/json/v5/campaigns"
+V501C = "https://api.direct.yandex.com/json/v501/campaigns"
 
 
 def _ctx(tmp_path):
@@ -38,8 +39,8 @@ def _params(**kw):
 
 
 async def test_excluded_add_preview(respx_mock, tmp_path):
-    respx_mock.post(V5C).mock(return_value=_ok({
-        "Campaigns": [{"Id": 7, "Name": "K",
+    respx_mock.post(V501C).mock(return_value=_ok({
+        "Campaigns": [{"Id": 7, "Name": "K", "Type": "TEXT_CAMPAIGN",
                        "ExcludedSites": {"Items": ["ok.ru"]}}]}))
     ctx = _ctx(tmp_path)
     prep = await _prepare_campaigns_update(
@@ -50,8 +51,8 @@ async def test_excluded_add_preview(respx_mock, tmp_path):
 
 
 async def test_excluded_validation(respx_mock, tmp_path):
-    respx_mock.post(V5C).mock(return_value=_ok({
-        "Campaigns": [{"Id": 7, "Name": "K"}]}))
+    respx_mock.post(V501C).mock(return_value=_ok({
+        "Campaigns": [{"Id": 7, "Name": "K", "Type": "TEXT_CAMPAIGN"}]}))
     ctx = _ctx(tmp_path)
     with pytest.raises(ValueError, match="пустой элемент"):
         await _prepare_campaigns_update(

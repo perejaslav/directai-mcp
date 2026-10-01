@@ -9,6 +9,7 @@ from directai_mcp.config import AccountEntry, Settings
 from directai_mcp.server import PLANS, do_apply_write, do_plan_write
 
 BASE = "https://api.direct.yandex.com/json/v5"
+BASE_V501 = "https://api.direct.yandex.com/json/v501"
 
 
 def _ctx(tmp_path):
@@ -53,6 +54,15 @@ async def test_ads_create_without_display_no_plan(tmp_path, respx_mock):
     respx_mock.post(f"{BASE}/campaigns").mock(
         return_value=_campaigns([{"Id": 2, "Name": "[TEST DirectAI] Шаг 4"}])
     )
+    # v1.8.0: типы группы/кампании — через v501.
+    respx_mock.post(f"{BASE_V501}/adgroups").mock(
+        return_value=_adgroups(
+            [{"Id": 5, "CampaignId": 2, "Type": "TEXT_AD_GROUP"}])
+    )
+    respx_mock.post(f"{BASE_V501}/campaigns").mock(
+        return_value=_campaigns(
+            [{"Id": 2, "Name": "[TEST DirectAI] Шаг 4", "Type": "TEXT_CAMPAIGN"}])
+    )
     out = await do_plan_write(
         ctx,
         "ads_create",
@@ -81,6 +91,15 @@ async def test_responsive_create_title_warning(tmp_path, respx_mock):
     )
     respx_mock.post(f"{BASE}/campaigns").mock(
         return_value=_campaigns([{"Id": 2, "Name": "[TEST DirectAI] Шаг 4"}])
+    )
+    # v1.8.0: типы группы/кампании — через v501.
+    respx_mock.post(f"{BASE_V501}/adgroups").mock(
+        return_value=_adgroups(
+            [{"Id": 5, "CampaignId": 2, "Type": "TEXT_AD_GROUP"}])
+    )
+    respx_mock.post(f"{BASE_V501}/campaigns").mock(
+        return_value=_campaigns(
+            [{"Id": 2, "Name": "[TEST DirectAI] Шаг 4", "Type": "TEXT_CAMPAIGN"}])
     )
     respx_mock.post("https://api.direct.yandex.com/json/v501/ads").mock(
         return_value=httpx.Response(200, json={"result": {"AddResults": [{"Id": 77}]}})

@@ -1442,7 +1442,7 @@ class ResponsiveAdCreate(BaseModel):
 
 class AdsCreateParams(GetActionParams):
     adgroup_id: int
-    ad_type: Literal["TEXT_AD", "RESPONSIVE_AD"] = "TEXT_AD"
+    ad_type: Literal["TEXT_AD", "RESPONSIVE_AD"] | None = None
     text_ads: list[TextAdCreate] = Field(default_factory=list)
     responsive_ads: list[ResponsiveAdCreate] = Field(default_factory=list)
 
@@ -1466,19 +1466,29 @@ _ADS_RESULT_KEY = {
 }
 
 
-async def _campaign_type(client, login: str, adgroup_id: int) -> str | None:
+# v1.8.0: типы группы и кампании (оба через v501: v5 отдаёт устаревшие
+# TEXT_AD_GROUP/TEXT_CAMPAIGN). TEXT_AD/RESPONSIVE_AD допустимы только
+# в группах TEXT_AD_GROUP и UNIFIED_AD_GROUP.
+ADS_GROUP_TYPES = ("TEXT_AD_GROUP", "UNIFIED_AD_GROUP")
+
+
+async def _campaign_and_group_type(
+    client, login: str, adgroup_id: int
+) -> tuple[str | None, str | None]:
     """v1.1.18: тип кампании группы (предупреждение о конвертации TEXT_AD)."""
     groups = await client.get_all(
         "adgroups",
         {
             "SelectionCriteria": {"Ids": [adgroup_id]},
-            "FieldNames": ["Id", "CampaignId"],
+            "FieldNames": ["Id", "CampaignId", "Type"],
         },
         login,
         "AdGroups",
+        "v501",
     )
     if not groups or groups[0].get("CampaignId") is None:
-        return None
+        return None, None
+    group_type = groups[0].get("Type")
     camps = await client.get_all(
         "campaigns",
         {
@@ -1487,10 +1497,11 @@ async def _campaign_type(client, login: str, adgroup_id: int) -> str | None:
         },
         login,
         "Campaigns",
+        "v501",
     )
     if not camps:
-        return None
-    return camps[0].get("Type")
+        return None, group_type
+    return camps[0].get("Type"), group_type
 
 
 def _conversion_note(
@@ -1512,9 +1523,20 @@ def _conversion_note(
 async def _prepare_ads_create(ctx: Ctx, entry: AccountEntry, params: BaseModel) -> dict:
     assert isinstance(params, AdsCreateParams)
     rules = load_rules(ctx.data_dir / "rules.toml" if ctx.data_dir else None)
-    items = params.text_ads if params.ad_type == "TEXT_AD" else params.responsive_ads
-    # v1.1.18: тексты проверяем до любых API-вызовов (вместо 5002 на apply).
-    if params.ad_type == "TEXT_AD":
+    # v1.8.0: дефолт ad_type — по переданным объявлениям; для ЕПК
+    # используйте responsive_ads (TEXT_AD API конвертирует, 10251).
+    # Тексты проверяем до любых API-вызовов (v1.1.18: вместо 5002 на apply):
+    # ветка — по явному ad_type, иначе по непустому списку.
+    tentative = params.ad_type
+    if tentative is None:
+        if params.text_ads and params.responsive_ads:
+            raise ValueError(
+                "text_ads и responsive_ads вместе — укажите ad_type.")
+        if not params.text_ads and not params.responsive_ads:
+            raise ValueError("text_ads/responsive_ads пусты.")
+        tentative = "TEXT_AD" if params.text_ads else "RESPONSIVE_AD"
+    items = params.text_ads if tentative == "TEXT_AD" else params.responsive_ads
+    if tentative == "TEXT_AD":
         if not params.text_ads:
             raise ValueError("text_ads пуст.")
         if params.responsive_ads:
@@ -1548,24 +1570,46 @@ async def _prepare_ads_create(ctx: Ctx, entry: AccountEntry, params: BaseModel) 
                     errors.append(err)
             if errors:
                 raise ValueError(f"«{item.titles[0]}»: " + "; ".join(errors))
+    # v1.8.0: типы группы и кампании — до API (оба через v501).
+    # TEXT_AD/RESPONSIVE_AD допустимы только в TEXT_AD_GROUP/UNIFIED_AD_GROUP.
+    client = ctx.direct()
+    try:
+        campaign_type, group_type = await _campaign_and_group_type(
+            client, entry.login, params.adgroup_id
+        )
+    finally:
+        await client.aclose()
+    if campaign_type is None and group_type is None:
+        raise ValueError(f"группа {params.adgroup_id} не найдена.")
+    if campaign_type is None:
+        raise ValueError(
+            f"кампания группы {params.adgroup_id} не найдена.")
+    if campaign_type not in ("TEXT_CAMPAIGN", "UNIFIED_CAMPAIGN"):
+        raise ValueError(
+            f"неизвестный тип кампании {campaign_type} — "
+            "создание объявлений отклонено до API.")
+    if group_type not in ADS_GROUP_TYPES:
+        raise ValueError(
+            f"группа {params.adgroup_id} типа {group_type}: ads_create "
+            "поддерживает только TEXT_AD/RESPONSIVE_AD "
+            "(группы TEXT_AD_GROUP и UNIFIED_AD_GROUP).")
+    # v1.8.0: дефолт ad_type — по переданным объявлениям (для ЕПК
+    # используйте responsive_ads); явный ad_type фиксирует ветку.
+    ad_type = params.ad_type or tentative
+    params.ad_type = ad_type
+    warnings: list[str] = []
+    if ad_type == "TEXT_AD" and campaign_type == "UNIFIED_CAMPAIGN":
+        warnings.append(
+            "TEXT_AD в ЕПК-кампании API конвертирует в RESPONSIVE_AD "
+            "(10251), заголовки склеиваются; по умолчанию для ЕПК — "
+            "RESPONSIVE_AD."
+        )
     # v1.1.17: существование расширений проверяем до сборки тела.
     set_ids = sorted(
         {i.sitelink_set_id for i in items if i.sitelink_set_id is not None}
     )
     ext_ids = sorted({e for i in items for e in i.ad_extension_ids})
-    # v1.1.18 п.2: тип кампании для предупреждения о конвертации TEXT_AD.
-    campaign_type: str | None = None
-    if params.ad_type == "TEXT_AD":
-        client = ctx.direct()
-        try:
-            campaign_type = await _campaign_type(
-                client, entry.login, params.adgroup_id
-            )
-            if set_ids or ext_ids:
-                await _check_refs(client, entry.login, set_ids, ext_ids)
-        finally:
-            await client.aclose()
-    elif set_ids or ext_ids:
+    if set_ids or ext_ids:
         client = ctx.direct()
         try:
             await _check_refs(client, entry.login, set_ids, ext_ids)
@@ -1573,7 +1617,6 @@ async def _prepare_ads_create(ctx: Ctx, entry: AccountEntry, params: BaseModel) 
             await client.aclose()
     bodies: list[dict] = []
     preview_lines: list[str] = []
-    warnings: list[str] = []
     if params.ad_type == "TEXT_AD":
         for item in params.text_ads:
             _require_display(f"«{item.title}»", item.display_url_path)

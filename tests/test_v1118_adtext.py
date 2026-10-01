@@ -13,6 +13,7 @@ from directai_mcp.safety import adtext
 from directai_mcp.server import INSTRUCTIONS, PLANS, do_plan_write
 
 BASE = "https://api.direct.yandex.com/json/v5"
+BASE_V501 = "https://api.direct.yandex.com/json/v501"
 
 
 def _ctx(tmp_path):
@@ -32,13 +33,24 @@ def _clean_plans():
 
 
 def _guard(respx_mock, campaign=None):
-    campaign = campaign or {"Id": 2, "Name": "[TEST DirectAI] Шаг 4"}
+    campaign = campaign or {"Id": 2, "Name": "[TEST DirectAI] Шаг 4",
+                           "Type": "TEXT_CAMPAIGN"}
     respx_mock.post(f"{BASE}/adgroups").mock(
         return_value=httpx.Response(
             200, json={"result": {"AdGroups": [{"Id": 5, "CampaignId": 2}]}}
         )
     )
     respx_mock.post(f"{BASE}/campaigns").mock(
+        return_value=httpx.Response(200, json={"result": {"Campaigns": [campaign]}})
+    )
+    # v1.8.0: ads_create резолвит типы группы/кампании через v501.
+    respx_mock.post(f"{BASE_V501}/adgroups").mock(
+        return_value=httpx.Response(
+            200, json={"result": {"AdGroups": [
+                {"Id": 5, "CampaignId": 2, "Type": "TEXT_AD_GROUP"}]}}
+        )
+    )
+    respx_mock.post(f"{BASE_V501}/campaigns").mock(
         return_value=httpx.Response(200, json={"result": {"Campaigns": [campaign]}})
     )
 

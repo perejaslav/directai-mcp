@@ -39,6 +39,7 @@ def _ctx(tmp_path):
 
 
 def _campaigns(respx_mock, cid, name, **extra):
+    extra.setdefault("Type", "TEXT_CAMPAIGN")
     payload = httpx.Response(
         200, json={"result": {"Campaigns": [
             {"Id": cid, "Name": name, **extra}]}})

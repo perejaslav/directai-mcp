@@ -292,13 +292,44 @@ async def _prepare_adgroups_create(
     ctx: Ctx, entry: AccountEntry, params: BaseModel
 ) -> dict:
     assert isinstance(params, AdGroupsCreateParams)
+    # v1.8.0: тип кампании каждой группы (v501 — v5 отдаёт устаревший
+    # TEXT_CAMPAIGN для ЕПК). Тип группы API выводит из кампании сам;
+    # неизвестная кампания — отказ до API.
+    wanted = sorted({g.campaign_id for g in params.groups})
+    client = ctx.direct()
+    try:
+        camps = await client.get_all(
+            "campaigns",
+            {
+                "SelectionCriteria": {"Ids": wanted},
+                "FieldNames": ["Id", "Type"],
+            },
+            entry.login,
+            "Campaigns",
+            "v501",
+        )
+    finally:
+        await client.aclose()
+    types = {int(i["Id"]): i.get("Type") for i in camps if i.get("Id") is not None}
+    missing = [c for c in wanted if c not in types]
+    if missing:
+        raise ValueError(f"кампании не найдены: {missing}.")
+    unknown = [c for c in wanted if types[c] not in
+               ("TEXT_CAMPAIGN", "UNIFIED_CAMPAIGN")]
+    if unknown:
+        raise ValueError(
+            f"неизвестный тип кампаний {unknown} — создание групп отклонено до API.")
     bodies = [_group_add_body(g) for g in params.groups]
     lines = [
-        f"{g.name} (кампания {g.campaign_id}, регионы {g.region_ids})"
+        f"{g.name} (кампания {g.campaign_id}"
+        + (" [ЕПК]" if types[g.campaign_id] == "UNIFIED_CAMPAIGN" else "")
+        + f", регионы {g.region_ids})"
         for g in params.groups
     ]
     return {
         "before": None,
+        # AdGroups.add — v5 (сервиса AdGroups в v501 нет; тип группы
+        # API выводит из типа кампании).
         "requests": [("adgroups", "add", {"AdGroups": bodies})],
         "preview": f"Будет создано групп: {len(bodies)}:\n"
         + "\n".join(f"- {line}" for line in lines),

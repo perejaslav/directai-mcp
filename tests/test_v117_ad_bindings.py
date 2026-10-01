@@ -43,6 +43,18 @@ def _guard(respx_mock, adgroup_id=5):
     respx_mock.post(f"{BASE}/campaigns").mock(
         return_value=_campaigns([{"Id": 2, "Name": "[TEST DirectAI] Шаг 4"}])
     )
+    # v1.8.0: ads_create резолвит типы группы/кампании через v501.
+    respx_mock.post(f"{V501}/adgroups").mock(
+        return_value=httpx.Response(
+            200,
+            json={"result": {"AdGroups": [
+                {"Id": adgroup_id, "CampaignId": 2, "Type": "TEXT_AD_GROUP"}]}},
+        )
+    )
+    respx_mock.post(f"{V501}/campaigns").mock(
+        return_value=_campaigns(
+            [{"Id": 2, "Name": "[TEST DirectAI] Шаг 4", "Type": "TEXT_CAMPAIGN"}])
+    )
 
 
 def _refs(respx_mock, sets=(SET_ID,), extensions=EXT_IDS):

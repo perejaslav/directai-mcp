@@ -14,6 +14,18 @@ from directai_mcp.config import AccountEntry, Settings
 from directai_mcp.server import PLANS, do_apply_write, do_plan_write
 
 BASE = "https://api.direct.yandex.com/json/v5"
+BASE_V501 = "https://api.direct.yandex.com/json/v501"
+
+
+def _ads_type_mocks(respx_mock, group_type="TEXT_AD_GROUP",
+                    campaign_type="TEXT_CAMPAIGN"):
+    """v1.8.0: ads_create резолвит типы группы/кампании через v501."""
+    respx_mock.post(f"{BASE_V501}/adgroups").mock(
+        return_value=_ok({"AdGroups": [{"Id": 5, "CampaignId": 2, "Type": group_type}]})
+    )
+    respx_mock.post(f"{BASE_V501}/campaigns").mock(
+        return_value=_ok({"Campaigns": [{"Id": 2, "Type": campaign_type}]})
+    )
 
 MANUAL = {"TextCampaign": {"BiddingStrategy": {
     "Search": {"BiddingStrategyType": "HIGHEST_POSITION"},
@@ -135,7 +147,8 @@ async def test_ad_title_over_by_one_blocked_no_api(tmp_path, respx_mock):
     assert route.call_count == 0
 
 
-async def test_ad_create_preview_counters(tmp_path):
+async def test_ad_create_preview_counters(tmp_path, respx_mock):
+    _ads_type_mocks(respx_mock)
     out = await do_plan_write(
         _ctx(tmp_path), "ads_create",
         {"account": "t", "adgroup_id": 5, "ad_type": "RESPONSIVE_AD",
@@ -312,6 +325,7 @@ async def test_verify_created_glued_title2_ok(respx_mock, tmp_path):
 
 
 async def test_apply_shows_warning_codes(respx_mock, tmp_path):
+    _ads_type_mocks(respx_mock)
     respx_mock.post(
         "https://api.direct.yandex.com/json/v501/ads").mock(
         return_value=_ok({"AddResults": [{

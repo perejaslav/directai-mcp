@@ -995,7 +995,7 @@ write_action(
 
 class CampaignsCreateParams(GetActionParams):
     name: str
-    campaign_type: Literal["TEXT_CAMPAIGN", "UNIFIED_CAMPAIGN"] = "TEXT_CAMPAIGN"
+    campaign_type: Literal["TEXT_CAMPAIGN", "UNIFIED_CAMPAIGN"] = "UNIFIED_CAMPAIGN"
     start_date: str | None = None
     end_date: str | None = None
     search_strategy: str = "HIGHEST_POSITION"
@@ -1034,6 +1034,15 @@ async def _prepare_campaigns_create(
     body: dict = {"Name": params.name, "StartDate": start}
     if params.end_date:
         body["EndDate"] = params.end_date
+    warnings: list[str] = []
+    # v1.8.0: ЕПК по умолчанию (запрос на json/v501); legacy TEXT —
+    # только явно, с предупреждением (устаревший тип для новых кампаний).
+    version = "v501" if params.campaign_type == "UNIFIED_CAMPAIGN" else "v5"
+    if params.campaign_type == "TEXT_CAMPAIGN":
+        warnings.append(
+            "TEXT_CAMPAIGN — устаревший тип для новых кампаний; "
+            "по умолчанию создаётся UNIFIED_CAMPAIGN (ЕПК)."
+        )
     if params.campaign_type == "TEXT_CAMPAIGN":
         body["TextCampaign"] = {
             "BiddingStrategy": {
@@ -1062,9 +1071,9 @@ async def _prepare_campaigns_create(
     )
     return {
         "before": None,
-        "requests": [("campaigns", "add", {"Campaigns": [body]})],
+        "requests": [("campaigns", "add", {"Campaigns": [body]}, version)],
         "preview": "Будет выполнено:\n- " + preview,
-        "warnings": [],
+        "warnings": warnings,
     }
 
 
@@ -1107,7 +1116,7 @@ async def _verify_campaigns_created(ctx: Ctx, entry: AccountEntry, plan) -> dict
 
 write_action(
     "campaigns_create",
-    "Создание кампании TEXT/UNIFIED",
+    "Создание кампании (по умолчанию UNIFIED_CAMPAIGN/ЕПК)",
     ("создать кампанию", "campaigns", "add", "новая кампания"),
     CampaignsCreateParams,
     prepare=_prepare_campaigns_create,
@@ -1174,12 +1183,12 @@ async def _prepare_campaigns_update(
     if params.negatives is not None:
         given["NegativeKeywords"] = {"Items": params.negatives}
     if params.strategy is not None:
-        given["TextCampaign"] = {"BiddingStrategy": params.strategy}
+        # v1.8.0: блок стратегии — по типу кампании, в тела ниже.
+        given["_strategy"] = params.strategy
     if params.excluded_sites is not None:
         given["_excluded_sites_add"] = list(params.excluded_sites)
     if params.tracking_params is not None:
-        given["TextCampaign"] = {**(given.get("TextCampaign") or {}),
-                                 "TrackingParams": params.tracking_params}
+        given["_tracking_params"] = params.tracking_params
     if not given:
         raise ValueError(
             "укажите end_date, negatives, strategy, excluded_sites или tracking_params.")
@@ -1189,12 +1198,15 @@ async def _prepare_campaigns_update(
             "campaigns",
             {
                 "SelectionCriteria": {"Ids": params.campaign_ids},
-                "FieldNames": ["Id", "Name", "ExcludedSites"],
+                # v1.8.0: Type через v501 (v5 отдаёт устаревший TEXT_CAMPAIGN
+                # для ЕПК) — для выбора блока стратегии и версии запроса.
+                "FieldNames": ["Id", "Name", "Type", "ExcludedSites"],
                 "TextCampaignFieldNames": ["BiddingStrategy"],
                 "UnifiedCampaignFieldNames": ["BiddingStrategy"],
             },
             entry.login,
             "Campaigns",
+            "v501",
         )
     finally:
         await client.aclose()
@@ -1202,6 +1214,13 @@ async def _prepare_campaigns_update(
     missing = [c for c in params.campaign_ids if c not in names]
     if missing:
         raise ValueError(f"кампании не найдены: {missing}.")
+    types = {int(i["Id"]): i.get("Type") for i in found if i.get("Id") is not None}
+    unknown = [c for c in params.campaign_ids if types.get(c) not in
+               ("TEXT_CAMPAIGN", "UNIFIED_CAMPAIGN")]
+    if unknown:
+        raise ValueError(
+            f"неизвестный тип кампаний {unknown} — обновление отклонено до API.")
+    use_v501 = any(types[c] == "UNIFIED_CAMPAIGN" for c in params.campaign_ids)
     if params.excluded_sites is not None:
         # Добавление к существующим (валидация из campaigns/update:
         # ≤1000 элементов, элемент ≤255 символов).
@@ -1239,6 +1258,18 @@ async def _prepare_campaigns_update(
     bodies = [dict({"Id": cid}, **{k: v for k, v in given.items()
                                    if not k.startswith("_")})
               for cid in params.campaign_ids]
+    if given.get("_strategy") is not None:
+        # v1.8.0: блок стратегии — по типу кампании (v501 поддерживает оба).
+        for body in bodies:
+            block = ("UnifiedCampaign" if types[body["Id"]] == "UNIFIED_CAMPAIGN"
+                     else "TextCampaign")
+            body[block] = {"BiddingStrategy": given["_strategy"]}
+    if given.get("_tracking_params") is not None:
+        for body in bodies:
+            block = ("UnifiedCampaign" if types[body["Id"]] == "UNIFIED_CAMPAIGN"
+                     else "TextCampaign")
+            body[block] = {**(body.get(block) or {}),
+                           "TrackingParams": given["_tracking_params"]}
     if params.excluded_sites is not None:
         for body in bodies:
             body["ExcludedSites"] = {"Items": given["_excluded_merged"][body["Id"]]}
@@ -1281,7 +1312,8 @@ async def _prepare_campaigns_update(
         for cid in params.campaign_ids]
     return {
         "before": names,
-        "requests": [("campaigns", "update", {"Campaigns": bodies})],
+        "requests": [("campaigns", "update", {"Campaigns": bodies},
+                      "v501" if use_v501 else "v5")],
         "preview": "Будет выполнено:\n" + "\n".join(f"- {line}" for line in lines),
         "warnings": warnings,
     }
