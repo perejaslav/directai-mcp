@@ -66,6 +66,12 @@ class AdsListParams(GetActionParams):
     campaign_ids: list[int] = Field(default_factory=list)
     adgroup_ids: list[int] = Field(default_factory=list)
     ad_ids: list[int] = Field(default_factory=list)
+    states: list[str] = Field(
+        default_factory=list,
+        description=("Фильтр States (AdStateSelectionEnum: ON, OFF, SUSPENDED, "
+                     "OFF_BY_MONITORING, ARCHIVED). Пусто — поведение API "
+                     "по умолчанию (без архивных)."),
+    )
 
 
 def _cut(text: str, limit: int = 120) -> str:
@@ -241,6 +247,9 @@ def _extract(ad: dict) -> dict:
         "домен",
         "url",
         "адрес",
+        "архив",
+        "архивные",
+        "states",
     ),
     AdsListParams,
 )
@@ -252,12 +261,13 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
 
     async def fetch(entry: AccountEntry, client):
         ads: list[dict] = []
+        states = {"States": list(params.states)} if params.states else {}
         for ids in chunk(params.campaign_ids, 10):
             ads.extend(
                 await client.get_all(
                     "ads",
                     {
-                        "SelectionCriteria": {"CampaignIds": ids},
+                        "SelectionCriteria": {"CampaignIds": ids, **states},
                         "FieldNames": FIELDS,
                         "TextAdFieldNames": TEXT_FIELDS,
                         "ResponsiveAdFieldNames": RESPONSIVE_FIELDS,
@@ -271,7 +281,8 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
                 await client.get_all(
                     "ads",
                     {
-                        "SelectionCriteria": {"AdGroupIds": params.adgroup_ids},
+                        "SelectionCriteria": {"AdGroupIds": params.adgroup_ids,
+                                              **states},
                         "FieldNames": FIELDS,
                         "TextAdFieldNames": TEXT_FIELDS,
                         "ResponsiveAdFieldNames": RESPONSIVE_FIELDS,
@@ -285,7 +296,7 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
                 await client.get_all(
                     "ads",
                     {
-                        "SelectionCriteria": {"Ids": params.ad_ids},
+                        "SelectionCriteria": {"Ids": params.ad_ids, **states},
                         "FieldNames": FIELDS,
                         "TextAdFieldNames": TEXT_FIELDS,
                         "ResponsiveAdFieldNames": RESPONSIVE_FIELDS,

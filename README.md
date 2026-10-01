@@ -200,7 +200,7 @@ Credential Manager (`directai-mcp`) или переменная `DIRECTAI_TOKEN`
 Порядок работы ИИ: `search_actions` → `describe_action` → `run_read`
 (чтение) или `plan_write` → показать вам → `apply_write` (запись).
 
-Чтение (32):
+Чтение (41):
 
 | Действие | Что делает |
 |---|---|
@@ -218,7 +218,7 @@ Credential Manager (`directai-mcp`) или переменная `DIRECTAI_TOKEN`
 | `stats_custom` | Произвольный отчёт: свои поля и фильтры |
 | `campaigns_list`, `campaigns_get` | Список и полные настройки кампаний |
 | `adgroups_list` | Группы кампании |
-| `ads_list` | Объявления (ссылки, уточнения, DisplayUrlPath) |
+| `ads_list` | Объявления (ссылки, уточнения, DisplayUrlPath; фильтр States, вкл. архивные) |
 | `keywords_list` | Фразы группы или кампании |
 | `negatives_audit` | Все минус-фразы кампании одним ответом |
 | `extensions_list` | Быстрые ссылки, уточнения, изображения |
@@ -231,6 +231,12 @@ Credential Manager (`directai-mcp`) или переменная `DIRECTAI_TOKEN`
 | `counter_check` | Проверка счётчиков Метрики кампании |
 | `moderation_check` | Статусы модерации объявлений |
 | `webmaster_hosts`, `webmaster_summary`, `webmaster_query` | Вебмастер: сайты и подтверждение прав, ИКС и проблемы, произвольный read-ресурс API v4 |
+| `audience_segments_list`, `audience_segment_get` | Аудитории: сегменты пользователя (тип, статус, размер) |
+| `strategies_get` | Пакетные стратегии: настройки, бюджеты и цели |
+| `feeds_get` | Фиды: источник, статус обработки, кампании |
+| `dynamic_targets_get`, `dynamic_feed_targets_get`, `smart_targets_get` | Условия динамических объявлений и фильтры смарт-баннеров |
+| `businesses_get` | Профили организаций (только по ID) |
+| `turbopages_get` | Турбо-страницы: метаданные без содержимого блоков |
 
 Запись (15, все — только через план, см. §5):
 

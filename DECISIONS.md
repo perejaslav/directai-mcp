@@ -1,5 +1,46 @@
 # DECISIONS.md — отступления от SPEC и уточнения
 
+## v1.3.0: dump-действия шага 0 — стратегии, фиды, таргетинг, бизнес, турбо (01.10.2026)
+- Семь read-действий в новом `catalog/dump.py` (регистрация 17→18 модулей,
+  реестр 58→65): `strategies_get` (Strategies.get + все subtype-массивы),
+  `feeds_get` (Feeds.get + Url/File-подполя), `dynamic_targets_get`
+  (DynamicTextAdTargets.get, ключ `Webpages`), `dynamic_feed_targets_get`
+  (DynamicFeedAdTargets.get), `smart_targets_get` (SmartAdTargets.get),
+  `businesses_get` (Businesses.get, только по `business_ids` — весь кабинет
+  не выгружается), `turbopages_get` (TurboPages.get, только метаданные).
+  Деньги (micros) — в рубли при показе (`micros_to_rubles` + `money`),
+  как в остальных действиях.
+- Схемы сверены с WSDL/XSD (`?wsdl`, `general.xsd`), живой API поправил
+  три места: у `StrategyPayForConversionMultipleGoalsFieldNames` нет
+  `GoalId` (только WeeklySpendLimit/CustomPeriodBudget/BudgetType);
+  массивов `StrategyHighestPositionFieldNames`/`StrategyManualCpmFieldNames`
+  не существует — вместо них 6 PerCampaign/PerFilter-массивов (все взяты
+  из WSDL); `feeds.get` требует опускать `SelectionCriteria` целиком при
+  выборке всех (пустой `{}` даёт 8000); `businesses.get` отклоняет
+  Limit > 1000 (4002) — в `DirectClient.get_all` добавлен опциональный
+  `page_limit` (дефолт PAGE_LIMIT, поведение остальных не меняется).
+- `ads_list`: новый фильтр `states` (AdStateSelectionEnum: ON, OFF,
+  SUSPENDED, OFF_BY_MONITORING, ARCHIVED) во всех трёх ветках скоупа;
+  по умолчанию поведение не меняется (без архивных). Живьём: кампания
+  без архивных — 4 активных / 0 архивных.
+- `keywords_list` без изменений: `---autotargeting` возвращается (проверено
+  живьём: строка «Автотаргетинг» с категориями в выгрузке кампании).
+- `vcards_get` НЕ реализован: Яндекс удалил визитки — живой API отвечает
+  3500 «Визитки больше не поддерживаются». В dump-скилле фиксируется как
+  ограничение источника `Yandex API`.
+- Живая проверка — `scripts/dump_step0.py` (через реестр ACTIONS, как
+  run_read; реальные ID только через аргументы CLI): strategies (пусто,
+  без ошибки), feeds (4 реальных фида), targets (пусто на UNIFIED без
+  ошибки), businesses (полный профиль по ID), turbopages (пусто без
+  ошибки). Динамических/смарт-кампаний в кабинетах нет (все 140 —
+  TEXT_CAMPAIGN по v5) — полный рендеринг таргетингов покрыт оффлайн-тестами
+  на WSDL-фигурах (`Conditions` списком и `{Items: [...]}`).
+- Тесты: новый `tests/test_dump.py` (10: регистрация read-only, схемы,
+  RU/EN-синонимы поиска, scope-ошибки без сети, оффлайн-рендер всех
+  действий, States в `ads_list`, `page_limit`); `test_registry.py`: +7
+  действий, модулей 18. README §4: чтение 32→41 (+строка Аудиторий-сегментов,
+  пропущенная в v1.2.5). Всего 461 passed, ruff чист (src, tests).
+
 ## v1.2.6: Аудитории, этап 2 — запись из файла + delete (экспериментально, ветка feat/audience-api, 30.09.2026)
 - Два write-действия через plan_write → apply_write в новом
   `catalog/audience_write.py` (`catalog/audiences.py` и `audience_segments.py`

@@ -21,6 +21,7 @@ from directai_mcp.catalog import campaigns as campaigns_mod
 from directai_mcp.catalog import changes as changes_mod
 from directai_mcp.catalog import counters as counters_mod
 from directai_mcp.catalog import dictionaries as dictionaries_mod
+from directai_mcp.catalog import dump as dump_mod
 from directai_mcp.catalog import extensions as extensions_mod
 from directai_mcp.catalog import keywords as keywords_mod
 from directai_mcp.catalog import limits as limits_mod
@@ -42,6 +43,7 @@ _ACTION_MODULES = (
     changes_mod,
     counters_mod,
     dictionaries_mod,
+    dump_mod,
     extensions_mod,
     keywords_mod,
     moderation_mod,

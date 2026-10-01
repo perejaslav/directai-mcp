@@ -211,13 +211,18 @@ class DirectClient:
         client_login: str | None,
         items_key: str,
         version: str = "v5",
+        page_limit: int = PAGE_LIMIT,
     ) -> list[dict]:
-        """Paginate get via Page/LimitedBy (SPEC 7.6)."""
+        """Paginate get via Page/LimitedBy (SPEC 7.6).
+
+        page_limit overrides PAGE_LIMIT for services capping page size
+        (e.g. businesses.get rejects Limit > 1000 with 4002).
+        """
         items: list[dict] = []
         offset = 0
         while True:
             page_params = dict(params)
-            page_params["Page"] = {"Limit": PAGE_LIMIT, "Offset": offset}
+            page_params["Page"] = {"Limit": page_limit, "Offset": offset}
             result = await self.call(service, "get", page_params, client_login, version)
             batch = result.get(items_key, [])
             if isinstance(batch, list):
