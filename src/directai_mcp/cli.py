@@ -349,6 +349,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     doc.add_argument("--json", action="store_true", help="machine output for the skill")
     doc.add_argument("--skip-api", action="store_true", help="skip network calls")
+    doc.add_argument(
+        "--preinstall",
+        action="store_true",
+        help="strict pre-reinstall check: busy exe is FAIL, not INFO",
+    )
     return p
 
 
@@ -369,7 +374,13 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "doctor":
         from directai_mcp.doctor import cmd_doctor
 
-        raise SystemExit(cmd_doctor(json_output=args.json, skip_api=args.skip_api))
+        raise SystemExit(
+            cmd_doctor(
+                json_output=args.json,
+                skip_api=args.skip_api,
+                preinstall=args.preinstall,
+            )
+        )
     raise SystemExit(cmd_serve(sandbox=args.sandbox))
 
 

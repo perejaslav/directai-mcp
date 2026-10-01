@@ -72,14 +72,21 @@ def test_processes_none_ok(monkeypatch):
     assert doctor.check_processes().status == "OK"
 
 
-def test_processes_holder_warn(monkeypatch):
+def test_processes_holder_info_by_default(monkeypatch):
     monkeypatch.setattr(
         doctor,
         "_tasklist_rows",
         lambda: [("directai-mcp.exe", 111), ("hermes.exe", 222)],
     )
     r = doctor.check_processes()
-    assert r.status == "WARN" and "111" in r.detail and "222" in r.detail
+    assert r.status == "OK" and "INFO" in r.detail
+    assert "111" in r.detail and "222" in r.detail
+
+
+def test_processes_holder_warn_preinstall(monkeypatch):
+    monkeypatch.setattr(doctor, "_tasklist_rows", lambda: [("directai-mcp.exe", 111)])
+    r = doctor.check_processes(preinstall=True)
+    assert r.status == "WARN" and "111" in r.detail
 
 
 def test_processes_unavailable_warn(monkeypatch):
@@ -101,7 +108,7 @@ def test_file_lock_no_exe_warn(monkeypatch):
     assert doctor.check_file_lock().status == "WARN"
 
 
-def test_file_lock_busy_fail(monkeypatch, tmp_path):
+def test_file_lock_busy_info_by_default(monkeypatch, tmp_path):
     target = tmp_path / "directai-mcp.exe"
     target.write_bytes(b"x")
 
@@ -110,6 +117,18 @@ def test_file_lock_busy_fail(monkeypatch, tmp_path):
 
     monkeypatch.setattr("builtins.open", _raise)
     r = doctor.check_file_lock(str(target))
+    assert r.status == "OK" and "INFO" in r.detail and "os error 32" in r.detail
+
+
+def test_file_lock_busy_fail_preinstall(monkeypatch, tmp_path):
+    target = tmp_path / "directai-mcp.exe"
+    target.write_bytes(b"x")
+
+    def _raise(path, mode):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr("builtins.open", _raise)
+    r = doctor.check_file_lock(str(target), preinstall=True)
     assert r.status == "FAIL" and "os error 32" in r.detail
 
 
@@ -276,6 +295,7 @@ def test_json_schema_no_secrets(monkeypatch, tmp_path, capsys):
     payload = json.loads(capsys.readouterr().out)
     assert payload["schema"] == 1
     assert payload["overall"] in ("ok", "warn", "fail")
+    assert payload["preinstall"] is False
     assert len(payload["checks"]) == 9
     ids = sorted([c.get("id") for c in payload["checks"]])
     assert ids == ["a", "b", "c", "d", "e", "f", "g", "h", "i"]
@@ -285,15 +305,15 @@ def test_json_schema_no_secrets(monkeypatch, tmp_path, capsys):
 def test_doctor_all_mocked_exit_zero(monkeypatch):
     import directai_mcp.doctor as d
 
-    monkeypatch.setattr(d, "check_version", lambda: _result("OK"))
-    monkeypatch.setattr(d, "check_exe", lambda: _result("OK"))
-    monkeypatch.setattr(d, "check_processes", lambda: _result("OK"))
+    monkeypatch.setattr(d, "check_version", lambda *a, **k: _result("OK"))
+    monkeypatch.setattr(d, "check_exe", lambda *a, **k: _result("OK"))
+    monkeypatch.setattr(d, "check_processes", lambda *a, **k: _result("OK"))
     monkeypatch.setattr(d, "check_file_lock", lambda *a, **k: _result("OK"))
-    monkeypatch.setattr(d, "check_config", lambda: _result("OK"))
-    monkeypatch.setattr(d, "check_tokens", lambda: _result("OK"))
+    monkeypatch.setattr(d, "check_config", lambda *a, **k: _result("OK"))
+    monkeypatch.setattr(d, "check_tokens", lambda *a, **k: _result("OK"))
     monkeypatch.setattr(d, "check_api", lambda skip_api=False: _result("OK"))
-    monkeypatch.setattr(d, "check_hermes", lambda: _result("OK"))
-    monkeypatch.setattr(d, "check_audience", lambda: _result("OK"))
+    monkeypatch.setattr(d, "check_hermes", lambda *a, **k: _result("OK"))
+    monkeypatch.setattr(d, "check_audience", lambda *a, **k: _result("OK"))
     results, code = d.run_doctor()
     assert code == 0
     assert format_json(results, code).startswith("{")
@@ -302,15 +322,58 @@ def test_doctor_all_mocked_exit_zero(monkeypatch):
 def test_doctor_exe_warn_downgrades_file_lock_ok(monkeypatch):
     import directai_mcp.doctor as d
 
-    monkeypatch.setattr(d, "check_version", lambda: _result("OK"))
-    monkeypatch.setattr(d, "check_exe", lambda: _result("WARN"))
-    monkeypatch.setattr(d, "check_processes", lambda: _result("OK"))
-    monkeypatch.setattr(d, "check_file_lock", lambda *a, **k: _result("OK"))
-    monkeypatch.setattr(d, "check_config", lambda: _result("OK"))
-    monkeypatch.setattr(d, "check_tokens", lambda: _result("OK"))
+    monkeypatch.setattr(d, "check_version", lambda *a, **k: _result("OK"))
+    monkeypatch.setattr(d, "check_exe", lambda *a, **k: _result("WARN"))
+    monkeypatch.setattr(d, "check_processes", lambda *a, **k: _result("OK"))
+    monkeypatch.setattr(
+        d,
+        "check_file_lock",
+        lambda *a, **k: CheckResult(
+            id="d", name="n", status="OK", detail="открывается: C:/x"
+        ),
+    )
+    monkeypatch.setattr(d, "check_config", lambda *a, **k: _result("OK"))
+    monkeypatch.setattr(d, "check_tokens", lambda *a, **k: _result("OK"))
     monkeypatch.setattr(d, "check_api", lambda skip_api=False: _result("OK"))
-    monkeypatch.setattr(d, "check_hermes", lambda: _result("OK"))
-    monkeypatch.setattr(d, "check_audience", lambda: _result("OK"))
+    monkeypatch.setattr(d, "check_hermes", lambda *a, **k: _result("OK"))
+    monkeypatch.setattr(d, "check_audience", lambda *a, **k: _result("OK"))
     results, code = d.run_doctor()
     assert code == 1
     assert results[3].status == "WARN"
+
+
+def test_doctor_preinstall_flag_reaches_checks(monkeypatch):
+    import directai_mcp.doctor as d
+
+    seen = {}
+
+    def _c(*a, **k):
+        seen["c"] = k.get("preinstall")
+        return _result("OK")
+
+    def _d(*a, **k):
+        seen["d"] = k.get("preinstall")
+        return _result("OK")
+
+    monkeypatch.setattr(d, "check_version", lambda *a, **k: _result("OK"))
+    monkeypatch.setattr(d, "check_exe", lambda *a, **k: _result("OK"))
+    monkeypatch.setattr(d, "check_processes", _c)
+    monkeypatch.setattr(d, "check_file_lock", _d)
+    monkeypatch.setattr(d, "check_config", lambda *a, **k: _result("OK"))
+    monkeypatch.setattr(d, "check_tokens", lambda *a, **k: _result("OK"))
+    monkeypatch.setattr(d, "check_api", lambda skip_api=False: _result("OK"))
+    monkeypatch.setattr(d, "check_hermes", lambda *a, **k: _result("OK"))
+    monkeypatch.setattr(d, "check_audience", lambda *a, **k: _result("OK"))
+    d.run_doctor(preinstall=True)
+    assert seen == {"c": True, "d": True}
+
+
+def test_doctor_cli_has_preinstall_flag():
+    from directai_mcp.cli import build_parser
+
+    args = build_parser().parse_args(["doctor", "--preinstall", "--skip-api", "--json"])
+    assert args.preinstall is True
+    assert args.skip_api is True
+    assert args.json is True
+    default = build_parser().parse_args(["doctor"])
+    assert default.preinstall is False

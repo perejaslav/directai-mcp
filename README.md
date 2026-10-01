@@ -388,6 +388,12 @@ Get-CimInstance Win32_Process |
 Hermes запущен отдельным процессом (direct spawn) и таким фильтром не ловится.
 Чужие процессы агент не убивает — команды выполняет человек.
 
+Проверка перед переустановкой (c и d должны быть OK):
+
+```powershell
+directai-mcp doctor --preinstall
+```
+
 Обновление с бэкапом вне uv tool dir и откатом при ошибке
 (без `exit` — он закрывает окно PowerShell):
 
@@ -440,14 +446,17 @@ if ($LASTEXITCODE -ne 0) {
 
 ```powershell
 directai-mcp doctor
-directai-mcp doctor --skip-api   # без сети
-directai-mcp doctor --json       # машинный вывод для скилла
+directai-mcp doctor --skip-api     # без сети
+directai-mcp doctor --json         # машинный вывод для скилла
+directai-mcp doctor --preinstall   # строгая проверка перед переустановкой
 ```
 
 Девять проверок по порядку (версия, exe, процессы, блокировка файла,
 конфиг, токены, API, Hermes, Аудитории) — каждая OK / WARN / FAIL
 с причиной и рекомендуемым действием. Код возврата: 0 — всё OK,
 1 — есть WARN, 2 — есть FAIL. Токены не печатаются (только есть/нет/длина).
+Занятый exe и работающие сессии по умолчанию — INFO, а не тревога;
+строго (WARN/FAIL) — только с `--preinstall` перед переустановкой.
 Диагностика read-only: ничего не останавливает и не правит, чинит человек
 готовым блоком из `skills/directai-connection-doctor/references/playbooks.md`.
 

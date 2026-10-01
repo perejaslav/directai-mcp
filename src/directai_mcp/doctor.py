@@ -264,8 +264,12 @@ def _tasklist_rows() -> list[tuple[str, int]] | None:
     return rows
 
 
-def check_processes() -> CheckResult:
-    """c. Зависшие процессы (только список PID, без kill)."""
+def check_processes(preinstall: bool = False) -> CheckResult:
+    """c. Процессы, использующие exe/шлюз (только список PID, без kill).
+
+    По умолчанию — INFO (работающие сессии — норма); с --preinstall —
+    WARN (перед переустановкой всё должно быть остановлено).
+    """
     rows = _tasklist_rows()
     if rows is None:
         return CheckResult(
@@ -282,20 +286,33 @@ def check_processes() -> CheckResult:
     ]
     if not holders:
         return CheckResult(
-            id="c", name="Процессы", status=STATUS_OK, detail="зависших процессов нет"
+            id="c", name="Процессы", status=STATUS_OK, detail="процессов нет"
         )
     detail = ", ".join(f"{name} pid={pid}" for name, pid in sorted(set(holders)))
+    if preinstall:
+        return CheckResult(
+            id="c",
+            name="Процессы",
+            status=STATUS_WARN,
+            detail=f"держат exe/шлюз: {detail}",
+            hint="перед переустановкой остановить полным блоком (README §7); direct spawn Hermes ловится по имени, фильтр python.exe не использовать",
+        )
     return CheckResult(
         id="c",
         name="Процессы",
-        status=STATUS_WARN,
-        detail=f"держат exe/шлюз: {detail}",
-        hint="перед переустановкой остановить полным блоком (README §7); direct spawn Hermes ловится по имени, фильтр python.exe не использовать",
+        status=STATUS_OK,
+        detail=f"INFO: exe используется {len(set(holders))} процессами: {detail} — для переустановки остановить полным блоком (README §7)",
     )
 
 
-def check_file_lock(exe_path: str | None = None) -> CheckResult:
-    """d. Блокировка файла (os error 32): пробное открытие без изменения."""
+def check_file_lock(
+    exe_path: str | None = None, preinstall: bool = False
+) -> CheckResult:
+    """d. Блокировка файла (os error 32): пробное открытие без изменения.
+
+    Занятый файл по умолчанию — INFO (сессии работают — норма);
+    с --preinstall — FAIL (перед переустановкой exe должен быть свободен).
+    """
     path = exe_path
     if path is None:
         found = exe_candidates()
@@ -312,12 +329,19 @@ def check_file_lock(exe_path: str | None = None) -> CheckResult:
         with open(path, "r+b"):
             pass
     except PermissionError as e:
+        if preinstall:
+            return CheckResult(
+                id="d",
+                name="Блокировка файла",
+                status=STATUS_FAIL,
+                detail=f"файл занят (os error 32): {path}: {e}",
+                hint="закрыть процессы из проверки c полным блоком (README §7), затем повторить установку",
+            )
         return CheckResult(
             id="d",
             name="Блокировка файла",
-            status=STATUS_FAIL,
-            detail=f"файл занят (os error 32): {path}: {e}",
-            hint="закрыть процессы из проверки c полным блоком (README §7), затем повторить установку",
+            status=STATUS_OK,
+            detail=f"INFO: файл занят (os error 32): {path} — для переустановки остановить полным блоком (README §7)",
         )
     except OSError as e:
         return CheckResult(
@@ -543,11 +567,19 @@ def check_audience() -> CheckResult:
     )
 
 
-def run_doctor(skip_api: bool = False) -> tuple[list[CheckResult], int]:
+def run_doctor(
+    skip_api: bool = False, preinstall: bool = False
+) -> tuple[list[CheckResult], int]:
     """Все проверки по порядку; возвращает (результаты, код возврата)."""
     exe = check_exe()
-    file_lock = check_file_lock(exe.detail if exe.status == STATUS_OK else None)
-    if exe.status == STATUS_WARN and file_lock.status == STATUS_OK:
+    file_lock = check_file_lock(
+        exe.detail if exe.status == STATUS_OK else None, preinstall=preinstall
+    )
+    if (
+        exe.status == STATUS_WARN
+        and file_lock.status == STATUS_OK
+        and file_lock.detail.startswith("открывается")
+    ):
         # Дубль exe: проверен первый попавшийся — честно понижаем до WARN.
         file_lock = CheckResult(
             id=file_lock.id,
@@ -559,7 +591,7 @@ def run_doctor(skip_api: bool = False) -> tuple[list[CheckResult], int]:
     results = [
         check_version(),
         exe,
-        check_processes(),
+        check_processes(preinstall=preinstall),
         file_lock,
         check_config(),
         check_tokens(),
@@ -584,21 +616,26 @@ def format_human(results: list[CheckResult]) -> str:
     return "\n".join(lines)
 
 
-def format_json(results: list[CheckResult], exit_code: int) -> str:
+def format_json(
+    results: list[CheckResult], exit_code: int, preinstall: bool = False
+) -> str:
     overall = "ok" if exit_code == 0 else ("warn" if exit_code == 1 else "fail")
     payload = {
         "schema": DOCTOR_SCHEMA_VERSION,
         "overall": overall,
         "exit_code": exit_code,
+        "preinstall": preinstall,
         "checks": [r.to_dict() for r in results],
     }
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
-def cmd_doctor(json_output: bool = False, skip_api: bool = False) -> int:
-    results, code = run_doctor(skip_api=skip_api)
+def cmd_doctor(
+    json_output: bool = False, skip_api: bool = False, preinstall: bool = False
+) -> int:
+    results, code = run_doctor(skip_api=skip_api, preinstall=preinstall)
     if json_output:
-        print(format_json(results, code))
+        print(format_json(results, code, preinstall=preinstall))
     else:
         print(format_human(results))
     return code
