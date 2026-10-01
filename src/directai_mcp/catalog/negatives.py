@@ -243,7 +243,8 @@ async def _audit(ctx: Ctx, params: BaseModel) -> str:
         dump_tag=params.dump_tag,
         dump_action="negatives_audit",
         dump_params=params.model_dump(),
-        dump_raw={
+        dump_raw={"negatives_audit": []},
+        dump_extra={
             "campaigns": [
                 dict(i, linked_to_campaign=True) for i in raw_camps],
             "adgroups": [

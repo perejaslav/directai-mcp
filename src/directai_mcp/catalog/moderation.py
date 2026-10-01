@@ -259,8 +259,16 @@ async def _run(ctx: Ctx, params: BaseModel) -> str:
         dump_dir=params.dump_dir, dump_tag=params.dump_tag,
         dump_action="moderation_check",
         dump_params=params.model_dump(),
-        dump_raw={k: [dict(i, linked_to_campaign=True) for i in v]
-                  for k, v in raw.items()},
+        dump_raw={"moderation_check": []},
+        dump_extra={
+            "campaigns": [
+                dict(i, linked_to_campaign=True) for i in raw["campaigns"]],
+            "adgroups": [
+                dict(i, linked_to_campaign=True) for i in raw["adgroups"]],
+            "ads": [dict(i, linked_to_campaign=True) for i in raw["ads"]],
+            "keywords": [
+                dict(i, linked_to_campaign=True) for i in raw["keywords"]],
+        },
         dump_fields={
             "Campaigns": ["Id", "Name", "State", "Status", "Type"],
             "AdGroups": ["Id", "CampaignId", "Name", "Status",

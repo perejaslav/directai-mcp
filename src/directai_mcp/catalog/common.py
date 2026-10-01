@@ -518,6 +518,7 @@ def _dump_envelope_line(
     dump_scope: str | None,
     errors: list[str] | None,
     truncated: bool,
+    dump_extra: dict[str, list] | None = None,
 ) -> str:
     """v1.4.0: односекционный конверт (делегирует write_dump_sections)."""
     return write_dump_sections(
@@ -526,8 +527,13 @@ def _dump_envelope_line(
         dump_action,
         account,
         dump_params or {},
-        {name: {"columns": columns, "display_rows": rows,
-                "raw_items": (dump_raw or {}).get(name, [])}},
+        {
+            name: {"columns": columns, "display_rows": rows,
+                   "raw_items": (dump_raw or {}).get(name, [])},
+            **{sec: {"columns": [], "display_rows": [],
+                     "raw_items": items}
+                for sec, items in (dump_extra or {}).items()},
+        },
         dump_fields or {},
         dump_tally,
         list(dump_logins or []),
@@ -574,6 +580,7 @@ def finalize(
     dump_tally: dict | None = None,
     dump_logins: list | None = None,
     dump_scope: str | None = None,
+    dump_extra: dict[str, list] | None = None,
 ) -> str:
     """Cap rows at 200, render table, autosave full result on cut or demand.
 
@@ -664,6 +671,7 @@ def finalize(
             name, columns, rows, dump_params, dump_raw, dump_fields,
             dump_tally, dump_logins, dump_scope, errors,
             truncated=len(rows) > FILE_SUMMARY_ROWS,
+            dump_extra=dump_extra,
         )
     if output == "inline" and len(rows) > shown_cap and ctx.data_dir is not None:
         # Legacy-автосохранение при обрезке (шаг 1.1-3, правка: единый

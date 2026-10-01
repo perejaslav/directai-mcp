@@ -22,6 +22,9 @@
   counters/goals + display-MD; `metrika_goals_list` — как все.
 - Живая проверка: конверт campaigns_get/ads_list(+archived) — NN-имена,
   manifest+sha256, describe-файлы, raw micros, string-ID, `requested_field_names`.
+- Фикс до приёмки: ключи `dump_raw` обязаны совпадать с именем секции
+  (иначе raw терялся: ads/negatives/moderation/metrika); для подсекций —
+  `dump_extra`. Регрессионный тест на секции negatives.
 - Тесты: `tests/test_v140_envelope.py` (6: raw/ID/деньги/фразы, два вызова,
   truncated, linked-флаги, scope cabinet, схема params). Всего 480 passed,
   ruff чист (src, tests).

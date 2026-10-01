@@ -694,7 +694,7 @@ async def _goals(ctx: Ctx, params: BaseModel) -> str:
         dump_dir=params.dump_dir, dump_tag=params.dump_tag,
         dump_action="metrika_goals_list",
         dump_params=params.model_dump(),
-        dump_raw={"metrika_goals": raw},
+        dump_raw={"metrika_goals_list": raw},
         dump_fields={"Metrika": ["counter/{id}", "counter/{id}/goals"],
                      "Campaigns": ["Id", "CounterIds"]},
         dump_tally=tally, dump_logins=[e.login for e in entries],

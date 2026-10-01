@@ -717,8 +717,9 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
         dump_tag=params.dump_tag,
         dump_action="ads_list",
         dump_params=params.model_dump(),
-        dump_raw={
-            "ads": [dict(i, linked_to_campaign=True) for i in raw_ads],
+        dump_raw={"ads_list": [
+            dict(i, linked_to_campaign=True) for i in raw_ads]},
+        dump_extra={
             "sitelink_sets": [
                 dict(i, linked_to_campaign=True) for i in raw_sitelinks],
             "ad_extensions": [

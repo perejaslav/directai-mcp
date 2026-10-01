@@ -162,3 +162,32 @@ def test_envelope_params_dump_dir_schema():
     fields = ACTIONS["keywords_list"].params.model_fields
     assert "dump_dir" in fields and "dump_tag" in fields
     assert not fields["dump_dir"].is_required()
+
+
+def test_envelope_negatives_sections_raw(monkeypatch, tmp_path):
+    import asyncio
+
+    import directai_mcp.catalog.negatives as neg
+
+    payload = (
+        [{"Id": 7, "Name": "C", "NegativeKeywords": {"Items": ["a"]}}],
+        [{"Id": 5, "CampaignId": 7, "Name": "G",
+          "NegativeKeywords": {"Items": []}}],
+        [{"Id": 900000051, "Name": "S",
+          "NegativeKeywords": {"Items": ["b"]}}],
+        {"Campaigns": {}, "AdGroups": {}, "NegativeKeywordSharedSets": {}},
+    )
+    monkeypatch.setattr(neg, "map_accounts", _fake_map(payload))
+    dump_dir = tmp_path / "dump"
+    asyncio.run(ACTIONS["negatives_audit"].run(
+        _ctx(tmp_path), neg.NegativesAuditParams(
+            account="m", campaign_ids=[7], dump_dir=str(dump_dir))))
+    env = json.loads((dump_dir / "01_negatives_audit.json").read_text(
+        encoding="utf-8"))
+    assert set(env["sections"]) == {
+        "negatives_audit", "campaigns", "adgroups",
+        "negative_keyword_shared_sets"}
+    for sec in ("campaigns", "adgroups", "negative_keyword_shared_sets"):
+        assert len(env["sections"][sec]["raw_items"]) == 1
+        assert env["sections"][sec]["raw_items"][0][
+            "linked_to_campaign"] is True

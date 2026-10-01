@@ -224,6 +224,8 @@ async def _list(ctx: Ctx, params: BaseModel) -> str:
         dump_raw={
             "adgroups_list": [
                 dict(i, linked_to_campaign=True) for i in raw],
+        },
+        dump_extra={
             "keywords_autotargeting": [
                 dict(i, linked_to_campaign=True) for i in auto_raw],
         },
