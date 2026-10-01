@@ -50,6 +50,11 @@ MAX_CONTEXT_BID_RUB = 5000.0
 MANUAL_SEARCH = "HIGHEST_POSITION"
 MANUAL_NETWORK = ("MAXIMUM_COVERAGE", "MANUAL_CPM")
 
+# v1.10.1: API v5 трактует ЕПК-группы как TEXT_AD_GROUP (живая проверка
+# 01.10.2026: привязка 48420621 на UNIFIED_AD_GROUP 5203919471 существует,
+# хотя AvailableForTargetsInAdGroupTypes никогда не содержит UNIFIED_AD_GROUP).
+V501_TO_V5_ADGROUP_TYPE = {"UNIFIED_AD_GROUP": "TEXT_AD_GROUP"}
+
 # AND/OR reminder required in every plan_write preview (A8).
 AND_OR_NOTE = (
     "На поиске условие сужает аудиторию (AND с фразами), "
@@ -179,10 +184,9 @@ def validate_rules(list_type: str, rules: list[RetargetingRule]) -> tuple[list[d
                     f"{MIN_LIFESPAN}..{MAX_LIFESPAN} дней."
                 )
             if arg.external_id in (12, 13):
-                warnings.append(
-                    f"ExternalId {arg.external_id} — служебная цель "
-                    "(A5: вовлечённые сессии / все приоритетные цели): "
-                    "проверьте в интерфейсе, что условие работает."
+                raise ValueError(
+                    f"ExternalId {arg.external_id} — служебная цель, "
+                    "Директ не принимает её в условиях ретаргетинга (ошибка 8800)."
                 )
             api_args.append({
                 "ExternalId": int(arg.external_id),
@@ -764,7 +768,8 @@ async def _prepare_target_add(ctx: Ctx, entry: AccountEntry, params: BaseModel) 
         )
     items = ((rl.get("AvailableForTargetsInAdGroupTypes") or {}).get("Items")
              if isinstance(rl.get("AvailableForTargetsInAdGroupTypes"), dict) else None)
-    if not items or group_type not in items:
+    effective_type = V501_TO_V5_ADGROUP_TYPE.get(group_type, group_type)
+    if not items or (group_type not in items and effective_type not in items):
         raise ValueError(
             f"условие {params.retargeting_list_id} нельзя привязать к группе "
             f"{params.adgroup_id} (тип {group_type}): допустимы {items or '—'}."
