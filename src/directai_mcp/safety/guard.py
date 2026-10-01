@@ -19,6 +19,13 @@ TEST_PREFIX = "[TEST DirectAI]"
 # Текст блокировки — по ТЗ дословно.
 BUDGET_BLOCK = "Изменение бюджета запрещено политикой."
 
+# Запись в Аудитории выключена по умолчанию (мёрж feat/audience-api в main):
+# включается только явным [audience] write_enabled=true. Текст — в стиле
+# остальных блокировок guard.
+AUDIENCE_WRITE_DISABLED = (
+    "запись в Аудитории выключена ([audience] write_enabled=false)."
+)
+
 # Бюджетные ключи параметров (нормализация: нижний регистр без подчеркиваний).
 # Смена стратегии — тоже бюджетная операция (п.1 ТЗ): ключ strategy входит сюда.
 _BUDGET_KEYS = frozenset({
@@ -384,6 +391,11 @@ async def check_write(
     if is_budget_write(action, params):
         raise GuardBlocked(BUDGET_BLOCK)
     if action == "audience_segment_from_file":
+        # Мёрж в main: запись в Аудитории выключена по умолчанию, включается
+        # только явным [audience] write_enabled=true. Дальше — тот же guard:
+        # plan_write → подтверждение человека → apply_write.
+        if not ctx.settings.audience_write_enabled:
+            raise GuardBlocked(AUDIENCE_WRITE_DISABLED)
         # Этап 2 (эксперимент): имя обязано нести тестовый префикс.
         name = params.get("segment_name", "")
         if not (isinstance(name, str) and name.startswith(TEST_PREFIX)):
@@ -392,6 +404,8 @@ async def check_write(
             )
         return
     if action == "audience_segment_delete":
+        if not ctx.settings.audience_write_enabled:
+            raise GuardBlocked(AUDIENCE_WRITE_DISABLED)
         await _require_audience_test_segment(ctx, params.get("segment_id"))
         return
     if action == "campaigns_create":

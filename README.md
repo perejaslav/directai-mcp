@@ -182,7 +182,7 @@ args = []
 
 | Файл | Что внутри и как править |
 |---|---|
-| `accounts.toml` | Ваши кабинеты: `[auth] login` — владелец токена, под каждый логин свой `[aliases.*]` (короткое имя и роль). Плюс `defaults` (`include_vat`, `max_rows`, `attribution`) и секция `[guard]`. Секретов здесь нет. Править любым текстовым редактором, применяется со следующего запроса. |
+| `accounts.toml` | Ваши кабинеты: `[auth] login` — владелец токена, под каждый логин свой `[aliases.*]` (короткое имя и роль). Плюс `defaults` (`include_vat`, `max_rows`, `attribution`), секция `[guard]` и секция `[audience]` (`write_enabled`, дефолт `false` — запись в Аудитории выключена). Секретов здесь нет. Править любым текстовым редактором, применяется со следующего запроса. |
 | `rules.toml` | Правила: обязательный DisplayUrlPath, слова для заголовков, пороги `max_budget_ratio` / `max_bid_ratio` (предупреждения при резких изменениях). |
 | `goals.toml` | `id цели → Название` (цели Метрики). В отчётах цель видна как «Название (id)», без названия — голый id. Названия вписываете вы. |
 | `journal.sqlite` | Журнал всех записей (не удаляйте). |
@@ -194,6 +194,10 @@ Credential Manager (`directai-mcp`) или переменная `DIRECTAI_TOKEN`
 Яндекс.Вебмастера можно хранить отдельный токен: `directai-mcp set-token
 --webmaster` (Credential Manager `directai-mcp-webmaster` или переменная
 `DIRECTAI_WEBMASTER_TOKEN`); без него используется основной токен.
+Запись в Яндекс Аудитории выключена по умолчанию
+(`[audience] write_enabled=false`); включается только явным
+`write_enabled = true`, путь тот же: `plan_write` → ваше согласие →
+`apply_write`, guard требует имя сегмента `[TEST DirectAI]*`.
 
 ## 4. Что умеет сервер
 

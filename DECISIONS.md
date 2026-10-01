@@ -1,5 +1,23 @@
 # DECISIONS.md — отступления от SPEC и уточнения
 
+## v1.4.1 + мёрж feat/audience-api в main (01.10.2026)
+- Ветка `feat/audience-api` смёржена в `main` (`--no-ff`), тег `v1.4.1` на main.
+  Ветка не удалена. Состав мёржа: v1.2.4 (Вебмастер) + v1.2.5 (Аудитории чтение)
+  + v1.2.6 (Аудитории запись) + v1.3.0–v1.3.4, v1.4.0–v1.4.1 (dump-конвейер).
+- Запись в Аудитории ВЫКЛЮЧЕНА по умолчанию: `[audience] write_enabled=false`
+  (`Settings.audience_write_enabled`, дефолт `False`). При выключенной записи
+  `audience_segment_from_file`/`audience_segment_delete` отклоняются в
+  `check_write` и в `prepare` (двойная проверка) до любых API-вызовов.
+  Включение — только явным `write_enabled = true` в `accounts.toml`.
+  Путь при включённой записи тот же: plan_write → согласие человека →
+  apply_write (скрипт `scripts/audience_write.py` требует «ДА»);
+  guard требует имя сегмента `[TEST DirectAI]*` (создание — по параметру,
+  удаление — по живому имени из API перед удалением).
+- Тесты: +5 в `tests/test_audience_write.py` (выключено по умолчанию,
+  from_file/delete отклоняются при `enabled=False`, delete без
+  `acknowledge_warnings` отклоняется, парсинг флага `load_settings`).
+  Существующие тесты пишут через `_ctx(enabled=True)`.
+
 ## v1.4.1: честные флаги конверта (приёмка dump, 01.10.2026)
 - `truncated` — неполнота raw (raw меньше, чем вернул API / не все
   страницы), выводится из фактической пагинации tally; обрезка

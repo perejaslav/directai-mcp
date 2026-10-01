@@ -31,12 +31,13 @@ TEST_SEG = {"id": 13, "name": "[TEST DirectAI] tmp",
             "create_time": "2026-01-01T00:00:00Z", "owner": "agency-login"}
 
 
-def _ctx(tmp_path) -> Ctx:
+def _ctx(tmp_path, enabled: bool = True) -> Ctx:
     settings = Settings(
         auth_login="agency-login",
         accounts={"m": AccountEntry(alias="m", login="agency-login")},
         accounts_path=tmp_path / "accounts.toml",
         guard=True,
+        audience_write_enabled=enabled,
     )
     return Ctx(settings=settings, token="main-token", data_dir=tmp_path)
 
@@ -152,6 +153,69 @@ async def test_from_file_rejects_bad_name(tmp_path):
     )
     assert out.startswith("Заблокировано защитой")
     assert len(PLANS) == 0
+
+
+def test_write_disabled_by_default():
+    assert Settings(auth_login="x").audience_write_enabled is False
+
+
+async def test_write_rejected_when_disabled(tmp_path):
+    path = _write_contacts(tmp_path)
+    out = await do_plan_write(
+        _ctx(tmp_path, enabled=False), "audience_segment_from_file",
+        {"file_path": path, "segment_name": "[TEST DirectAI] off",
+         "content_type": "phone"},
+    )
+    assert out.startswith("Заблокировано защитой")
+    assert "write_enabled=false" in out
+    assert len(PLANS) == 0
+
+
+async def test_delete_rejected_when_disabled(tmp_path, respx_mock):
+    respx_mock.get(SEGMENTS).mock(
+        return_value=httpx.Response(
+            200, json={"segments": REAL_LIKE + [TEST_SEG]})
+    )
+    out = await do_plan_write(
+        _ctx(tmp_path, enabled=False), "audience_segment_delete",
+        {"segment_id": 13},
+    )
+    assert out.startswith("Заблокировано защитой")
+    assert "write_enabled=false" in out
+    assert len(PLANS) == 0
+
+
+async def test_delete_requires_acknowledge(tmp_path, respx_mock):
+    respx_mock.get(SEGMENTS).mock(
+        side_effect=[
+            httpx.Response(200, json={"segments": REAL_LIKE + [TEST_SEG]}),
+            httpx.Response(200, json={"segments": REAL_LIKE + [TEST_SEG]}),
+        ]
+    )
+    out = await do_plan_write(
+        _ctx(tmp_path), "audience_segment_delete", {"segment_id": 13})
+    assert out.startswith("План ")
+    out = await do_apply_write(_ctx(tmp_path), _plan_id(out))
+    assert "acknowledge_warnings=true" in out
+
+
+def test_load_settings_audience_write_flag(tmp_path):
+    from directai_mcp.config import load_settings
+
+    cfg_path = tmp_path / "accounts.toml"
+    cfg_path.write_text(
+        '[auth]\nlogin = "agency-login"\n'
+        '[aliases.m]\nlogin = "agency-login"\n',
+        encoding="utf-8",
+    )
+    assert load_settings(cfg_path).audience_write_enabled is False
+    cfg_path.write_text(
+        '[auth]\nlogin = "agency-login"\n'
+        '[aliases.m]\nlogin = "agency-login"\n'
+        '[audience]\nwrite_enabled = true\n',
+        encoding="utf-8",
+    )
+    assert load_settings(cfg_path).audience_write_enabled is True
 
 
 async def test_from_file_flow_applied(tmp_path, respx_mock):

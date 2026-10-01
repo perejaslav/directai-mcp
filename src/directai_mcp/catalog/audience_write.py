@@ -259,6 +259,14 @@ class AudienceFromFileParams(BaseModel):
     )
 
 
+def _require_enabled(ctx: Ctx) -> None:
+    """Запись в Аудитории выключена по умолчанию ([audience] write_enabled)."""
+    if not ctx.settings.audience_write_enabled:
+        from directai_mcp.safety.guard import AUDIENCE_WRITE_DISABLED
+
+        raise GuardBlocked(AUDIENCE_WRITE_DISABLED)
+
+
 def _check_test_name(segment_name: str) -> None:
     if not segment_name.startswith(TEST_SEGMENT_PREFIX):
         raise GuardBlocked(
@@ -271,6 +279,7 @@ async def _prepare_from_file(
     ctx: Ctx, entry: AccountEntry, params: BaseModel
 ) -> dict:
     assert isinstance(params, AudienceFromFileParams)
+    _require_enabled(ctx)
     _check_test_name(params.segment_name)
     try:
         result = await asyncio.to_thread(
@@ -579,6 +588,7 @@ class AudienceSegmentDeleteParams(BaseModel):
 
 async def _prepare_delete(ctx: Ctx, entry: AccountEntry, params: BaseModel) -> dict:
     assert isinstance(params, AudienceSegmentDeleteParams)
+    _require_enabled(ctx)
     try:
         items = await _segments(_token(ctx))
     except AudienceError as exc:

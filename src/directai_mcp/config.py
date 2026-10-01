@@ -67,6 +67,9 @@ class Settings:
     legacy_sections: tuple[str, ...] = ()
     # Шаг 1.1-3: каталог отчётов из [paths] (дефолт — reports/ репозитория).
     reports_dir: Path | None = None
+    # Аудитории: запись выключена по умолчанию (мёрж feat/audience-api в main).
+    # Включение — только явным [audience] write_enabled=true в accounts.toml.
+    audience_write_enabled: bool = False
 
 
 def data_dir() -> Path:
@@ -170,6 +173,11 @@ def load_settings(path: Path | None = None) -> Settings:
     raw_reports = paths.get("reports_dir") if isinstance(paths, dict) else None
     reports_dir = Path(str(raw_reports)).expanduser() if raw_reports else None
 
+    audience_section = data.get("audience", {}) or {}
+    if not isinstance(audience_section, dict):
+        raise ConfigError(f"invalid [audience] section in {cfg_path}")
+    audience_write_enabled = bool(audience_section.get("write_enabled", False))
+
     return Settings(
         auth_login=auth_login,
         include_vat=include_vat,
@@ -187,6 +195,7 @@ def load_settings(path: Path | None = None) -> Settings:
         aliases=dict(aliases),
         legacy_sections=tuple(legacy),
         reports_dir=reports_dir,
+        audience_write_enabled=audience_write_enabled,
         units_warn_pct=units_warn_pct,
         counter_visits_warn_pct=counter_visits_warn_pct,
     )
