@@ -1,9 +1,10 @@
 # DECISIONS.md — отступления от SPEC и уточнения
 
 ## v1.4.1 + мёрж feat/audience-api в main (01.10.2026)
-- Ветка `feat/audience-api` смёржена в `main` (`--no-ff`), тег `v1.4.1` на main.
-  Ветка не удалена. Состав мёржа: v1.2.4 (Вебмастер) + v1.2.5 (Аудитории чтение)
-  + v1.2.6 (Аудитории запись) + v1.3.0–v1.3.4, v1.4.0–v1.4.1 (dump-конвейер).
+- Ветка `feat/audience-api` смёржена в `main` (`--no-ff`, мёрж `d2808a3`),
+  тег `v1.4.1` на main. Ветки `feat/audience-api` и `feat/webmaster-api`
+  (0 коммитов впереди main, оба кончика — предки main) удалены локально
+  и на origin после мёржа.
 - Запись в Аудитории ВЫКЛЮЧЕНА по умолчанию: `[audience] write_enabled=false`
   (`Settings.audience_write_enabled`, дефолт `False`). При выключенной записи
   `audience_segment_from_file`/`audience_segment_delete` отклоняются в
