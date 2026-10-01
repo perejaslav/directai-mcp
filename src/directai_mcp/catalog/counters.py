@@ -687,6 +687,10 @@ async def _goals(ctx: Ctx, params: BaseModel) -> str:
     display = (["_account"] if len(entries) > 1 else []) + columns
     context = (f"{mark}metrika_goals_list: "
                f"{', '.join(e.login for e in entries)}.")
+    # v1.4.1: источник — Management API Метрики (без пагинации, tally
+    # Direct неприменим): полнота по факту — все счётчики обработаны
+    # без ошибок. Частичный ответ (ошибка счётчика) — complete=false.
+    metrika_complete = not errors
     return finalize(
         ctx, context, "metrika_goals_list", display, rows, params.limit,
         params.save_as, errors, money_cols=(), output=params.output,
@@ -699,4 +703,6 @@ async def _goals(ctx: Ctx, params: BaseModel) -> str:
                      "Campaigns": ["Id", "CounterIds"]},
         dump_tally=tally, dump_logins=[e.login for e in entries],
         dump_scope="campaign",
+        dump_complete=metrika_complete,
+        dump_truncated=not metrika_complete,
     )

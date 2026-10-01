@@ -1,5 +1,27 @@
 # DECISIONS.md — отступления от SPEC и уточнения
 
+## v1.4.1: честные флаги конверта (приёмка dump, 01.10.2026)
+- `truncated` — неполнота raw (raw меньше, чем вернул API / не все
+  страницы), выводится из фактической пагинации tally; обрезка
+  display-строк для чата (`FILE_SUMMARY_ROWS`) — отдельный флаг
+  `display_truncated`, на `truncated` не влияет. Раньше любой ответ
+  длиннее 20 строк получал `truncated=true` при полном raw — валидатор
+  справедливо падал на живых кампаниях (keywords 75, bids 75,
+  negatives 264, audiences 222, extensions 993+).
+- `metrika_goals_list` (не-Direct источник): `pagination_complete` по
+  фактическому ответу Management API Метрики (все счётчики обработаны
+  без ошибок), tally Direct не нужен; частичный ответ (ошибка счётчика)
+  — `complete=false`. Неопределимая полнота — `null` + warning
+  (валидатор честно упадёт). Явное переопределение — параметры
+  `dump_complete`/`dump_truncated` в `finalize`.
+- Манифест пишет те же `pagination_complete`/`truncated`, что и конверт.
+- Тесты: `tests/test_v140_envelope.py` (+3: display обрезан/raw полон,
+  неполный raw, полный ответ Метрики; честный null без tally).
+  Всего 484 passed, ruff check чист.
+- Совместимость: схема конверта обратно совместима (+1 поле
+  `display_truncated`); старые файлы валидатор по-прежнему требует
+  `truncated=false`.
+
 ## v1.4.0: файловый конверт для dump (этап Б ТЗ, 01.10.2026)
 - Новые параметры всех read-действий: `dump_dir` (папка сессии) и `dump_tag`
   (суффикс). При `dump_dir` пишется детерминированный `<NN>_<action>[_<tag>].json`:

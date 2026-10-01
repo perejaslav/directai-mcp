@@ -95,6 +95,8 @@ def test_envelope_two_calls_two_files(monkeypatch, tmp_path):
 
 
 def test_envelope_truncated_honest(monkeypatch, tmp_path):
+    # v1.4.1: фейк без tally — полнота неизвестна: честный null,
+    # а не default true; display-обрезка отдельно.
     import asyncio
 
     import directai_mcp.catalog.keywords as kw
@@ -107,8 +109,92 @@ def test_envelope_truncated_honest(monkeypatch, tmp_path):
             account="m", campaign_ids=[7], dump_dir=str(dump_dir))))
     env = json.loads((dump_dir / "01_keywords_list.json").read_text(
         encoding="utf-8"))
-    assert env["truncated"] is True
+    assert env["pagination_complete"] is None
+    assert env["truncated"] is None
+    assert env["display_truncated"] is True
     assert len(env["sections"]["keywords_list"]["raw_items"]) == 25
+
+
+def test_envelope_display_cut_raw_full(tmp_path):
+    # v1.4.1: display обрезан (25 строк), raw полный и пагинация
+    # завершена → truncated=false, display_truncated=true.
+    from directai_mcp.catalog.common import write_dump_sections
+
+    dump_dir = tmp_path / "dump"
+    rows = [{"Id": str(i)} for i in range(25)]
+    write_dump_sections(
+        _ctx(tmp_path), str(dump_dir), "keywords_list", "m",
+        {"account": "m"}, {
+            "keywords_list": {
+                "columns": ["Id"], "display_rows": rows,
+                "raw_items": [dict(r, linked_to_campaign=True)
+                              for r in rows]},
+        },
+        {"FieldNames": ["Id"]},
+        {"pages": 2, "versions": ["v5"], "complete": True},
+        ["agency-login"], "campaign", [], True)
+    env = json.loads((dump_dir / "01_keywords_list.json").read_text(
+        encoding="utf-8"))
+    assert env["pagination_complete"] is True
+    assert env["truncated"] is False
+    assert env["display_truncated"] is True
+    manifest = _read_manifest(dump_dir)
+    assert manifest[0]["truncated"] is False
+    assert manifest[0]["pagination_complete"] is True
+
+
+def test_envelope_raw_incomplete(tmp_path):
+    # v1.4.1: пагинация не завершена → truncated=true (неполнота raw).
+    from directai_mcp.catalog.common import write_dump_sections
+
+    dump_dir = tmp_path / "dump"
+    rows = [{"Id": str(i)} for i in range(3)]
+    write_dump_sections(
+        _ctx(tmp_path), str(dump_dir), "keywords_list", "m",
+        {"account": "m"}, {
+            "keywords_list": {
+                "columns": ["Id"], "display_rows": rows,
+                "raw_items": [dict(r, linked_to_campaign=True)
+                              for r in rows]},
+        },
+        {"FieldNames": ["Id"]},
+        {"pages": 1, "versions": ["v5"], "complete": False},
+        ["agency-login"], "campaign", [], False)
+    env = json.loads((dump_dir / "01_keywords_list.json").read_text(
+        encoding="utf-8"))
+    assert env["pagination_complete"] is False
+    assert env["truncated"] is True
+    assert env["display_truncated"] is False
+
+
+def test_envelope_metrika_complete(monkeypatch, tmp_path):
+    # v1.4.1: полный ответ Метрики — complete=true без tally Direct.
+    import asyncio
+
+    import directai_mcp.catalog.counters as cc
+
+    async def fake_info(token, counter_id):
+        return {"name": "C", "site": "s"}
+
+    async def fake_types(token, counter_id):
+        return {"1": "action"}
+
+    async def fake_names(token, counter_id):
+        return {"1": "G"}
+
+    monkeypatch.setattr(cc, "counter_info", fake_info)
+    monkeypatch.setattr(cc, "counter_goal_types", fake_types)
+    monkeypatch.setattr(cc, "counter_goal_names", fake_names)
+    dump_dir = tmp_path / "dump"
+    asyncio.run(ACTIONS["metrika_goals_list"].run(
+        _ctx(tmp_path), cc.MetrikaGoalsListParams(
+            account="m", counter_ids=[7], dump_dir=str(dump_dir))))
+    env = json.loads((dump_dir / "01_metrika_goals_list.json").read_text(
+        encoding="utf-8"))
+    assert env["pagination_complete"] is True
+    assert env["truncated"] is False
+    assert env["display_truncated"] is False
+    assert len(env["sections"]["metrika_goals_list"]["raw_items"]) == 1
 
 
 def test_envelope_audiences_linked(monkeypatch, tmp_path):

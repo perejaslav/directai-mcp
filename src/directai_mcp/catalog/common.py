@@ -417,10 +417,21 @@ def write_dump_sections(
     logins: list,
     scope: str | None,
     warnings: list[str],
-    truncated: bool,
+    display_truncated: bool,
     dump_tag: str | None = None,
+    *,
+    raw_truncated: bool | None = None,
+    complete_override: bool | None = None,
 ) -> str:
     """v1.4.0: конверт с произвольными секциями + manifest + describe.
+
+    v1.4.1: `truncated` — неполнота raw (raw меньше, чем вернул API /
+    не все страницы), выводится из фактической пагинации; обрезка
+    display-строк для чата — отдельный флаг `display_truncated`, на
+    `truncated` не влияет. `raw_truncated`/`complete_override` — явное
+    переопределение для не-Direct источников (Метрика: tally Direct
+    неприменим); если полноту определить нельзя — `truncated: null`
+    + warning (валидатор честно упадёт).
 
     sections: {имя: {"columns": [...], "display_rows": [...],
                      "raw_items": [...]}} — ID нормализуются здесь.
@@ -440,6 +451,16 @@ def write_dump_sections(
     tally = tally or {}
     versions = tally.get("versions", [])
     net = ctx.net
+    complete = complete_override if complete_override is not None \
+        else tally.get("complete")
+    if raw_truncated is not None:
+        raw_cut: bool | None = raw_truncated
+    elif complete is True:
+        raw_cut = False
+    elif complete is False:
+        raw_cut = True
+    else:
+        raw_cut = None
     norm_sections = {}
     for sec_name, sec in sections.items():
         norm_sections[sec_name] = {
@@ -460,8 +481,9 @@ def write_dump_sections(
         "fetched_at": datetime.datetime.now().astimezone().isoformat(
             timespec="seconds"),
         "pages_fetched": tally.get("pages", 0),
-        "pagination_complete": tally.get("complete"),
-        "truncated": truncated,
+        "pagination_complete": complete,
+        "truncated": raw_cut,
+        "display_truncated": bool(display_truncated),
         "units": {
             "spent": net.units_used,
             "rests": {k: list(v) for k, v in net.rests.items()},
@@ -469,7 +491,7 @@ def write_dump_sections(
         "warnings": list(warnings),
         "sections": norm_sections,
     }
-    if not tally.get("pages") and tally.get("complete") is not True:
+    if not tally.get("pages") and complete is not True:
         envelope["warnings"].append(
             "нет данных пагинации: вызовы API не зафиксированы tally")
     path, digest = save_envelope(dump_dir, file_name, envelope)
@@ -494,8 +516,8 @@ def write_dump_sections(
         "file": file_name,
         "sha256": digest,
         "fetched_at": envelope["fetched_at"],
-        "pagination_complete": envelope["pagination_complete"],
-        "truncated": truncated,
+        "pagination_complete": complete,
+        "truncated": raw_cut,
         **({"scope": scope} if scope else {}),
     })
     return f"Dump-конверт: {path} (manifest: {manifest})."
@@ -517,10 +539,17 @@ def _dump_envelope_line(
     dump_logins: list | None,
     dump_scope: str | None,
     errors: list[str] | None,
-    truncated: bool,
+    display_truncated: bool,
     dump_extra: dict[str, list] | None = None,
+    dump_truncated: bool | None = None,
+    dump_complete: bool | None = None,
 ) -> str:
-    """v1.4.0: односекционный конверт (делегирует write_dump_sections)."""
+    """v1.4.0: односекционный конверт (делегирует write_dump_sections).
+
+    v1.4.1: `display_truncated` — обрезка display для чата;
+    `dump_truncated`/`dump_complete` — явная полнота raw для не-Direct
+    источников (иначе вывод из tally).
+    """
     return write_dump_sections(
         ctx,
         dump_dir,
@@ -539,8 +568,10 @@ def _dump_envelope_line(
         list(dump_logins or []),
         dump_scope,
         list(errors or []),
-        truncated,
+        display_truncated,
         dump_tag=dump_tag,
+        raw_truncated=dump_truncated,
+        complete_override=dump_complete,
     )
 
 
@@ -581,6 +612,11 @@ def finalize(
     dump_logins: list | None = None,
     dump_scope: str | None = None,
     dump_extra: dict[str, list] | None = None,
+    # v1.4.1: явная полнота raw / пагинации для не-Direct источников
+    # (Метрика). None — вывод из tally; display-обрезка на truncated
+    # не влияет.
+    dump_truncated: bool | None = None,
+    dump_complete: bool | None = None,
 ) -> str:
     """Cap rows at 200, render table, autosave full result on cut or demand.
 
@@ -670,8 +706,10 @@ def finalize(
             ctx, dump_dir or "", dump_tag, dump_action or "", account,
             name, columns, rows, dump_params, dump_raw, dump_fields,
             dump_tally, dump_logins, dump_scope, errors,
-            truncated=len(rows) > FILE_SUMMARY_ROWS,
+            display_truncated=len(rows) > FILE_SUMMARY_ROWS,
             dump_extra=dump_extra,
+            dump_truncated=dump_truncated,
+            dump_complete=dump_complete,
         )
     if output == "inline" and len(rows) > shown_cap and ctx.data_dir is not None:
         # Legacy-автосохранение при обрезке (шаг 1.1-3, правка: единый
