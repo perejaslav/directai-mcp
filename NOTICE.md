@@ -15,3 +15,7 @@
 и основная цель; идеи сопоставления со сторонними подходами (в т.ч.
 материалы lidfly-borrow-analysis и awaik/direct-mcp-ai-project, MIT)
 использованы только как идеи, код не копировался.
+
+Connection doctor (v1.7.0) — идея скилла диагностики подключения
+(`lidfly-connection-doctor` из awaik/direct-mcp-ai-project, MIT);
+реализация собственная, код оригинала не копировался.

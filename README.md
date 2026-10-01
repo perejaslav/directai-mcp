@@ -288,6 +288,15 @@ Credential Manager (`directai-mcp`) или переменная `DIRECTAI_TOKEN`
 | `bids_set` | Ставки фраз (поиск и сети) |
 | `bid_modifiers_set` | Корректировки: добавить, изменить, удалить |
 
+Запись в Аудитории (экспериментально, выключена по умолчанию
+`[audience] write_enabled=false`): `audience_segment_from_file` — создание
+сегмента uploading из локального CSV/TXT (phone/email, в API только SHA256-хеши;
+имя только `[TEST DirectAI]*`, файл с несколькими колонками без `id_column`
+отклоняется) и `audience_segment_delete` — удаление сегмента только
+`[TEST DirectAI]*` по живому имени из API. Путь тот же: `plan_write` → ваше
+согласие → `apply_write`; без включённого `write_enabled` оба действия
+отклоняются до API.
+
 ## 5. Как работает запись
 
 1. ИИ вызывает `plan_write` — сервер показывает предпросмотр «было → станет»
@@ -364,11 +373,20 @@ Guard это контролирует: перед каждой записью с
 команды выполняет человек в обычном PowerShell:
 
 ```powershell
-Get-Process directai-mcp -ErrorAction SilentlyContinue | Stop-Process
-Get-CimInstance Win32_Process -Filter 'Name="python.exe"' |
-  Where-Object { $_.CommandLine -like '*hermes_cli.main*gateway run*' } |
-  ForEach-Object { Stop-Process -Id $_.ProcessId }
+Get-Process directai-mcp -ErrorAction SilentlyContinue | Stop-Process -Force
+hermes -p default gateway stop 2>$null
+Get-CimInstance Win32_Process |
+  Where-Object { $_.CommandLine -match 'hermes|openchamber|opencode' -and $_.ProcessId -ne $PID } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+Start-Sleep -Seconds 2
+Get-CimInstance Win32_Process |
+  Where-Object { $_.Name -eq 'directai-mcp.exe' -or $_.CommandLine -match 'hermes|openchamber|opencode' } |
+  Select-Object ProcessId, Name
 ```
+
+Фильтр по `python.exe … hermes_cli.main … gateway run` не использовать:
+Hermes запущен отдельным процессом (direct spawn) и таким фильтром не ловится.
+Чужие процессы агент не убивает — команды выполняет человек.
 
 Обновление с бэкапом вне uv tool dir и откатом при ошибке
 (без `exit` — он закрывает окно PowerShell):
@@ -379,7 +397,7 @@ git pull
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $tooldir = uv tool dir
 Copy-Item "$tooldir\directai-mcp" "$env:USERPROFILE\directai-mcp-tool-backup-$stamp" -Recurse
-uv tool install --editable .
+uv tool install --force --editable .
 uv tool update-shell
 if ($LASTEXITCODE -ne 0) {
   Remove-Item "$tooldir\directai-mcp" -Recurse -Force
@@ -415,6 +433,28 @@ if ($LASTEXITCODE -ne 0) {
 | `Ignoring malformed tool` | Битая копия/рецепт, не повод сносить рабочий инструмент: закройте все окна харнесов и переустановите с `--force` (бэкап — вне tool dir). `uninstall` — только для заведомо мусорных записей |
 | `os error 32` при переустановке | exe занят MCP-клиентами: покажите владельцев (`Get-CimInstance Win32_Process -Filter 'Name="directai-mcp.exe"'`, поле `ParentProcessId`), чужие процессы не убивайте. Шлюз Hermes (`python.exe … hermes_cli.main … gateway run`) работает в фоне и держит exe даже при закрытых окнах — человек останавливает его сам (см. §7: остановка сервера и шлюза), после установки запускает Hermes заново. Висящие `opencode serve` — тоже владельцы: их закрывают штатно, не `kill` |
 | Как быстро проверить сервер | `directai-mcp --version` → `check` → `probe` (две строки OK, `stats_summary` найден; баллы не тратятся). Сырые stdio-пробы вручную не делать |
+
+## 8.1. Диагностика (doctor)
+
+При проблеме подключения — сначала doctor (агент — см. AGENTS.md §4.1):
+
+```powershell
+directai-mcp doctor
+directai-mcp doctor --skip-api   # без сети
+directai-mcp doctor --json       # машинный вывод для скилла
+```
+
+Девять проверок по порядку (версия, exe, процессы, блокировка файла,
+конфиг, токены, API, Hermes, Аудитории) — каждая OK / WARN / FAIL
+с причиной и рекомендуемым действием. Код возврата: 0 — всё OK,
+1 — есть WARN, 2 — есть FAIL. Токены не печатаются (только есть/нет/длина).
+Диагностика read-only: ничего не останавливает и не правит, чинит человек
+готовым блоком из `skills/directai-connection-doctor/references/playbooks.md`.
+
+Скилл `directai-connection-doctor` (триггеры: «MCP не работает»,
+«os error 32», «hermes не видит», коды 513/58/53) лежит в репозитории
+(`skills/directai-connection-doctor/`); установка локально — скопировать
+папку в `%USERPROFILE%\.agents\skills\directai-connection-doctor`.
 
 ## 9. Что отложено
 

@@ -210,7 +210,9 @@ def _check_primary_goals(settings, token: str) -> list[str]:
         )
         _check_status("metrika goals", status)
         payload = _json.loads(body)
-        have = {str(g.get("id")) for g in payload.get("goals", []) if isinstance(g, dict)}
+        have = {
+            str(g.get("id")) for g in payload.get("goals", []) if isinstance(g, dict)
+        }
         missing = sorted(i for i in ids if i not in have)
         if missing:
             out.append(
@@ -231,8 +233,7 @@ async def _check_audience(auth_login: str, main_token: str) -> str:
     token = get_audience_token(auth_login)
     if not token:
         return (
-            "Аудитории: не настроены "
-            "(необязательно: directai-mcp set-token --audience)"
+            "Аудитории: не настроены (необязательно: directai-mcp set-token --audience)"
         )
     try:
         payload = await _get(token, "segments")
@@ -276,8 +277,9 @@ async def _probe_async(timeout: float) -> int:
     from mcp import ClientSession
     from mcp.client.stdio import StdioServerParameters, stdio_client
 
-    params = StdioServerParameters(command=sys.executable,
-                                   args=["-m", "directai_mcp.cli"])
+    params = StdioServerParameters(
+        command=sys.executable, args=["-m", "directai_mcp.cli"]
+    )
     try:
         async with (
             asyncio.timeout(timeout),
@@ -341,6 +343,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="self-check over MCP: initialize, tools/list, search_actions",
     )
     pr.add_argument("--timeout", type=float, default=30.0)
+    doc = sub.add_parser(
+        "doctor",
+        help="diagnose connection: version, exe, processes, config, tokens, API, Hermes",
+    )
+    doc.add_argument("--json", action="store_true", help="machine output for the skill")
+    doc.add_argument("--skip-api", action="store_true", help="skip network calls")
     return p
 
 
@@ -352,14 +360,16 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(cmd_init())
     if args.command == "set-token":
         raise SystemExit(
-            cmd_set_token(
-                args.login, webmaster=args.webmaster, audience=args.audience
-            )
+            cmd_set_token(args.login, webmaster=args.webmaster, audience=args.audience)
         )
     if args.command == "check":
         raise SystemExit(cmd_check(sandbox=args.sandbox))
     if args.command == "probe":
         raise SystemExit(cmd_probe(timeout=args.timeout))
+    if args.command == "doctor":
+        from directai_mcp.doctor import cmd_doctor
+
+        raise SystemExit(cmd_doctor(json_output=args.json, skip_api=args.skip_api))
     raise SystemExit(cmd_serve(sandbox=args.sandbox))
 
 

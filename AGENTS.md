@@ -64,7 +64,8 @@ cd $env:USERPROFILE\directai-mcp
 Строка `warning: Ignoring malformed tool ... (run uv tool uninstall ...)`
 означает битую копию/рецепт, а не повод удалять рабочий `directai-mcp`.
 Порядок: попроси человека закрыть ВСЕ окна харнесов, затем переустанови
-поверх с `--force` (бэкап — см. §2). `uninstall` — только для заведомо
+поверх полным блоком остановки из §4 и командой
+`uv tool install --force --editable .` (бэкап — см. §2). `uninstall` — только для заведомо
 мусорных записей (бэкапов), рабочий инструмент не трогай.
 
 ## 4. os error 32 — файл держат другие MCP-клиенты
@@ -77,16 +78,23 @@ Get-CimInstance Win32_Process -Filter 'Name="directai-mcp.exe"' |
   Select-Object ProcessId, ParentProcessId, CommandLine
 ```
 
-Важно: шлюз Hermes (`python.exe … hermes_cli.main … gateway run`)
-работает в фоне и держит `directai-mcp.exe` даже при закрытых окнах
-харнесов. Поэтому перед переустановкой человек САМ останавливает
-сервер и шлюз, затем запускает Hermes заново:
+Важно: шлюз Hermes работает в фоне и держит `directai-mcp.exe` даже при
+закрытых окнах харнесов. Фильтр по
+`python.exe … hermes_cli.main … gateway run` не использовать: Hermes запущен
+отдельным процессом (direct spawn) и таким фильтром не ловится.
+Поэтому перед переустановкой человек САМ останавливает
+сервер и шлюз полным блоком, затем запускает Hermes заново:
 
 ```powershell
-Get-Process directai-mcp -ErrorAction SilentlyContinue | Stop-Process
-Get-CimInstance Win32_Process -Filter 'Name="python.exe"' |
-  Where-Object { $_.CommandLine -like '*hermes_cli.main*gateway run*' } |
-  ForEach-Object { Stop-Process -Id $_.ProcessId }
+Get-Process directai-mcp -ErrorAction SilentlyContinue | Stop-Process -Force
+hermes -p default gateway stop 2>$null
+Get-CimInstance Win32_Process |
+  Where-Object { $_.CommandLine -match 'hermes|openchamber|opencode' -and $_.ProcessId -ne $PID } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+Start-Sleep -Seconds 2
+Get-CimInstance Win32_Process |
+  Where-Object { $_.Name -eq 'directai-mcp.exe' -or $_.CommandLine -match 'hermes|openchamber|opencode' } |
+  Select-Object ProcessId, Name
 ```
 
 Чужие процессы агент не убивает — команды выполняет человек.
@@ -94,6 +102,17 @@ Get-CimInstance Win32_Process -Filter 'Name="python.exe"' |
 харнесах не выполняет — готовит блок команд, человек запускает
 его сам в обычном PowerShell при закрытых харнесах и остановленном
 шлюзе (после установки Hermes запускается заново).
+
+## 4.1. Проблема подключения — сначала doctor
+
+При проблеме подключения («MCP не работает», `os error 32`, «hermes не
+видит», коды 513/58/53, «после переустановки») — сначала запустить
+`directai-mcp doctor` (без сети — с `--skip-api`, для разбора —
+`--json`) и идти по его выводу: первая FAIL, иначе первая WARN, рецепт
+под неё — в `skills/directai-connection-doctor/references/playbooks.md`
+(канонический блок остановки — §4 выше). Пользователю выдавать ОДИН
+готовый блок PowerShell целиком и ждать результата. Диагностика
+read-only: kill/install/правки конфига — только с явного «да» человека.
 
 ## 5. Проверка — только по цепочке, сырые stdio-пробы запрещены
 

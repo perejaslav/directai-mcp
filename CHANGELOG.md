@@ -1,5 +1,25 @@
 # CHANGELOG
 
+## v1.7.0 (2026-10-01) — connection doctor
+
+- CLI `directai-mcp doctor` (`src/directai_mcp/doctor.py`): 9 read-only
+  проверок (a — версия пакет/pyproject/git, b — exe и дубли в PATH,
+  c — зависшие процессы списком PID без kill, d — блокировка файла
+  пробным открытием без изменения, e — конфиг и валидация v1.6.0,
+  f — токены без вывода значений, g — лёгкий clients.get с разбором
+  кодов 52/53/58/152/506/513/1000/1020, h — `hermes mcp test`
+  без фильтра python.exe gateway run, i — Аудитории write_enabled);
+  флаги `--json`/`--skip-api`; коды возврата 0/1/2.
+- Скилл `skills/directai-connection-doctor/` (SKILL.md +
+  references/playbooks.md): doctor --json → один готовый блок PowerShell;
+  fallback вручную, если exe сломан.
+- Шаг 0: README §5 — audience write-действия с правилами; README §7
+  и AGENTS.md §4 — полный блок остановки + `uv tool install --force
+  --editable .`; README §8.1 и AGENTS.md §4.1 — «сначала doctor»;
+  идея lidfly-connection-doctor (MIT) — в NOTICE.md, код не копировался.
+- Тесты: `tests/test_doctor.py` (27: a–i OK/WARN/FAIL, коды возврата,
+  --json-схема, отсутствие секретов, таблица кодов).
+
 ## v1.6.0 (2026-10-01) — пакет «Поиск и цель» (B1 + B3)
 
 - B1: типизированный статус поиска (`catalog/lookup.py`):
