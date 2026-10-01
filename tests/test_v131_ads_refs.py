@@ -1,0 +1,129 @@
+"""v1.3.1: ссылки-сущности ads_list + полные sitelinks extensions_list."""
+
+import directai_mcp.catalog.ads as ads_mod
+import directai_mcp.catalog.extensions as ext_mod
+from directai_mcp.catalog.registry import ACTIONS, Ctx
+from directai_mcp.config import AccountEntry, Settings
+
+LONG_HREF = "https://example.com/" + "k" * 200
+LONG_DESC = "Описание " + "д" * 200
+
+
+def _ctx(tmp_path) -> Ctx:
+    settings = Settings(
+        auth_login="agency-login",
+        accounts={"m": AccountEntry(alias="m", login="agency-login")},
+        accounts_path=tmp_path / "accounts.toml",
+    )
+    return Ctx(settings=settings, token="main-token", data_dir=tmp_path)
+
+
+def test_ads_ref_field_names_from_wsdl():
+    for name in ("BusinessId", "TurboPageId", "VCardId", "AdImageHash",
+                 "Mobile", "ErirAdDescription"):
+        assert name in ads_mod.TEXT_FIELDS
+    for name in ("BusinessId", "PriceExtension", "DisplayDomain"):
+        assert name in ads_mod.RESPONSIVE_FIELDS
+    assert ads_mod.TEXT_PRICE_FIELDS == [
+        "Price", "OldPrice", "PriceCurrency", "PriceQualifier"]
+    for key in ("TextAdFieldNames", "TextAdPriceExtensionFieldNames",
+                "ResponsiveAdFieldNames", "MobileAppAdFieldNames",
+                "DynamicTextAdFieldNames", "TextImageAdFieldNames",
+                "ShoppingAdFieldNames", "ListingAdFieldNames",
+                "SmartAdBuilderAdFieldNames"):
+        assert key in ads_mod._GET_SUBFIELDS
+
+
+def test_ads_fetch_sends_all_subfields(monkeypatch, tmp_path):
+    import asyncio
+
+    seen: list[dict] = []
+
+    async def fake(ctx, account_value, fn):
+        class Client:
+            async def get_all(self, service, params, login, key):
+                seen.append(params)
+                return []
+
+            async def aclose(self):
+                pass
+
+        entry = AccountEntry(alias="m", login="agency-login")
+        await fn(entry, Client())
+        return [(entry, ([], {}, {}, {}))]
+
+    monkeypatch.setattr(ads_mod, "map_accounts", fake)
+    asyncio.run(ACTIONS["ads_list"].run(
+        _ctx(tmp_path), ads_mod.AdsListParams(campaign_ids=[900000031])))
+    assert seen
+    body = seen[0]
+    assert body["TextAdPriceExtensionFieldNames"] == ads_mod.TEXT_PRICE_FIELDS
+    assert body["ResponsiveAdFieldNames"] == ads_mod.RESPONSIVE_FIELDS
+    assert "ShoppingAdFieldNames" in body
+
+
+def test_extract_text_refs():
+    info = ads_mod._extract({
+        "TextAd": {
+            "Title": "T",
+            "Text": "x",
+            "Href": "https://example.com",
+            "BusinessId": 900000006,
+            "TurboPageId": 900000007,
+            "Mobile": "YES",
+            "VCardId": 900000008,
+            "PriceExtension": {"Price": 100,
+                               "PriceCurrency": "RUB"},
+        },
+    })
+    assert info["business_id"] == 900000006
+    assert info["turbo_id"] == 900000007
+    assert info["mobile"] == "YES"
+    assert info["vcard_id"] == 900000008
+    assert "Price=100" in info["price"] and "RUB" in info["price"]
+
+
+def test_extract_responsive_refs():
+    info = ads_mod._extract({
+        "ResponsiveAd": {
+            "Titles": [{"Title": "T"}],
+            "Texts": [{"Text": "x"}],
+            "Href": "https://example.com",
+            "BusinessId": 900000006,
+            "AdImages": {"Items": [{"AdImageHash": "abc123"}]},
+            "VideoExtensions": {"Items": [{"VideoHash": "v1"}]},
+        },
+    })
+    assert info["business_id"] == 900000006
+    assert info["images"] == "abc123"
+    assert info["video"] == "YES"
+    assert info["turbo_id"] == "—" and info["price"] == "—"
+
+
+def test_extract_mobile_app_tracking():
+    info = ads_mod._extract({
+        "Type": "MOBILE_APP_AD",
+        "MobileAppAd": {
+            "Title": "App",
+            "Text": "Install",
+            "TrackingUrl": "https://example.com/track",
+        },
+    })
+    assert info["title"] == "App"
+    assert info["tracking"] == "https://example.com/track"
+
+
+def test_extensions_sitelinks_full_length(monkeypatch, tmp_path):
+    import asyncio
+
+    async def fake(ctx, account_value, fn):
+        sets = [{"Id": 9000000004, "Sitelinks": [
+            {"Title": "L", "Href": LONG_HREF, "Description": LONG_DESC}]}]
+        return [(AccountEntry(alias="m", login="agency-login"),
+                 (sets, [], []))]
+
+    monkeypatch.setattr(ext_mod, "map_accounts", fake)
+    out = asyncio.run(ACTIONS["extensions_list"].run(
+        _ctx(tmp_path), ext_mod.ExtensionsListParams(
+            sitelink_set_ids=[9000000004])))
+    assert LONG_HREF in out and LONG_DESC in out

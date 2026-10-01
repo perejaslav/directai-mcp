@@ -1,5 +1,20 @@
 # DECISIONS.md — отступления от SPEC и уточнения
 
+## v1.3.1: ссылки-сущности ads_list для dump (01.10.2026)
+- `ads_list` запрашивает subtype-поля всех типов (единый `_GET_SUBFIELDS`:
+  TextAd + TextAdPriceExtensionFieldNames + ResponsiveAd + MobileApp +
+  DynamicText + Image/MobileAppImage + все Builder + Shopping/Listing;
+  имена — строго по WSDL ads/get) и показывает колонки BusinessId,
+  TurboPageId, Price (raw, единицы PriceExtension не подтверждены),
+  Mobile; в файле дополнительно VCardId/Images/Tracking.
+- `_extract`: общий `_refs_into` + ветки всех subtype (раньше прочие типы
+  возвращали только «—»).
+- Инвариант test_v117: 14→18 колонок. `extensions_list` для sitelinks
+  уже отдавал полные Href/Description без усечения — покрыто тестом
+  (длинные строки 200+ символов проходят целиком).
+- Тесты: новый `tests/test_v131_ads_refs.py` (6). Всего 467 passed,
+  ruff чист (src, tests).
+
 ## v1.3.0: dump-действия шага 0 — стратегии, фиды, таргетинг, бизнес, турбо (01.10.2026)
 - Семь read-действий в новом `catalog/dump.py` (регистрация 17→18 модулей,
   реестр 58→65): `strategies_get` (Strategies.get + все subtype-массивы),
