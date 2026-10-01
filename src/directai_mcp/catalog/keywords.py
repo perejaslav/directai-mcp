@@ -731,7 +731,9 @@ async def _verify_keywords_add(ctx: Ctx, entry: AccountEntry, plan) -> dict:
 
 write_action(
     "keywords_add",
-    "Пакетное добавление фраз",
+    "Пакетное добавление фраз. "
+    "Перед добавлением фраз можно оценить их через "
+    "`phrases_forecast` (прогноз показов/кликов/цен, только чтение).",
     ("добавить фразы", "keywords", "add", "новые ключи", "фраза"),
     KeywordsAddParams,
     prepare=_prepare_keywords_add,

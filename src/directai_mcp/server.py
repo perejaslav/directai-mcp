@@ -23,6 +23,7 @@ from directai_mcp.catalog import counters as counters_mod
 from directai_mcp.catalog import dictionaries as dictionaries_mod
 from directai_mcp.catalog import dump as dump_mod
 from directai_mcp.catalog import extensions as extensions_mod
+from directai_mcp.catalog import forecast as forecast_mod
 from directai_mcp.catalog import keywords as keywords_mod
 from directai_mcp.catalog import limits as limits_mod
 from directai_mcp.catalog import moderation as moderation_mod
@@ -45,6 +46,7 @@ _ACTION_MODULES = (
     dictionaries_mod,
     dump_mod,
     extensions_mod,
+    forecast_mod,
     keywords_mod,
     moderation_mod,
     negatives_mod,

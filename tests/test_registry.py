@@ -64,6 +64,8 @@ EXPECTED = frozenset(
         "smart_targets_get",
         "businesses_get",
         "turbopages_get",
+        "keyword_bids_forecast",
+        "phrases_forecast",
     }
 )
 
@@ -73,4 +75,4 @@ def test_registry_has_all_actions():
 
 
 def test_registration_imports_referenced():
-    assert len(server_mod._ACTION_MODULES) == 18
+    assert len(server_mod._ACTION_MODULES) == 19

@@ -57,6 +57,80 @@ class LiveClient:
             await self._http.aclose()
             self._http = None
 
+    async def _call(self, method: str, param: object = None) -> object:
+        """Generic Live v4 call: token in body, locale ru. Returns `data`."""
+        body: dict = {
+            "method": method,
+            "locale": "ru",
+            "token": self.token,
+        }
+        if param is not None:
+            body["param"] = param
+        http = await self._http_client()
+        try:
+            self.stats.requests += 1
+            resp = await http.post(
+                LIVE_V4_URL,
+                headers={
+                    "Accept-Language": "ru",
+                    "Content-Type": "application/json; charset=utf-8",
+                },
+                json=body,
+            )
+        except (httpx.TimeoutException, httpx.NetworkError) as e:
+            raise LiveError(-1, f"network failure ({type(e).__name__})") from e
+        try:
+            payload = resp.json()
+        except ValueError as e:
+            raise LiveError(-1, f"HTTP {resp.status_code} (non-JSON)") from e
+        if not isinstance(payload, dict):
+            raise LiveError(-1, f"HTTP {resp.status_code} (bad envelope)")
+        if "error_code" in payload:
+            raise LiveError(
+                payload.get("error_code"),
+                str(payload.get("error_str") or "Live v4 error"),
+            )
+        if "data" not in payload:
+            raise LiveError(-1, "missing `data` in response")
+        return payload["data"]
+
+    # v1.9.0: прогноз показов/кликов/затрат для новых фраз (Live v4).
+    # Лимиты справки: ≤100 фраз за отчёт, ≤5 отчётов на пользователя,
+    # хранение 5 часов, среднее время готовности до ~60 с.
+    async def create_new_forecast(
+        self,
+        phrases: list[str],
+        geo: list[int] | None,
+        currency: str,
+        auction_bids: bool = True,
+    ) -> int:
+        param: dict = {
+            "Phrases": list(phrases),
+            "Currency": currency,
+            "AuctionBids": "Yes" if auction_bids else "No",
+        }
+        if geo:
+            param["GeoID"] = list(geo)
+        data = await self._call("CreateNewForecast", param)
+        try:
+            return int(data)  # type: ignore[arg-type]
+        except (TypeError, ValueError) as e:
+            raise LiveError(-1, f"bad forecast id: {data!r}") from e
+
+    async def get_forecast_list(self) -> list[dict]:
+        data = await self._call("GetForecastList")
+        return list(data) if isinstance(data, list) else []
+
+    async def get_forecast(self, forecast_id: int) -> dict:
+        data = await self._call("GetForecast", int(forecast_id))
+        if not isinstance(data, dict):
+            raise LiveError(-1, "bad forecast envelope")
+        return data
+
+    async def delete_forecast_report(self, forecast_id: int) -> bool:
+        data = await self._call("DeleteForecastReport", int(forecast_id))
+        return bool(data)
+
     async def account_management_get(self, logins: list[str]) -> dict:
         """Single AccountManagement/Get call for up to 50 logins.
 
