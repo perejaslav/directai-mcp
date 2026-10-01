@@ -567,6 +567,37 @@ def check_audience() -> CheckResult:
     )
 
 
+def check_retargeting() -> CheckResult:
+    """k. Ретаргетинг: запись выключена — INFO (в шкале OK)."""
+    from directai_mcp.config import ConfigError, load_settings
+
+    try:
+        settings = load_settings()
+    except ConfigError as e:
+        return CheckResult(
+            id="k",
+            name="Ретаргетинг",
+            status=STATUS_WARN,
+            detail=f"конфиг не прочитан ({e})",
+            hint="сначала починить конфиг (проверка e)",
+        )
+    if not settings.retargeting_write_enabled:
+        return CheckResult(
+            id="k",
+            name="Ретаргетинг",
+            status=STATUS_OK,
+            detail="INFO: запись выключена ([retargeting] write_enabled=false, по умолчанию)",
+        )
+    return CheckResult(
+        id="k",
+        name="Ретаргетинг",
+        status=STATUS_WARN,
+        detail="запись включена (write_enabled=true, экспериментально)",
+        hint="условия/привязки только через plan_write → согласие → apply_write; "
+        "удаление условий — только неиспользуемых ([TEST DirectAI]* без доп. подтверждения)",
+    )
+
+
 def check_plans_dir() -> CheckResult:
     """j. Каталог планов: доступен на запись (общий для всех процессов)."""
     from directai_mcp.config import ConfigError, data_dir, load_settings
@@ -640,6 +671,7 @@ def run_doctor(
         check_api(skip_api=skip_api),
         check_hermes(),
         check_audience(),
+        check_retargeting(),
         check_plans_dir(),
     ]
     if any(r.status == STATUS_FAIL for r in results):

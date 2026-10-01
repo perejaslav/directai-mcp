@@ -66,6 +66,13 @@ EXPECTED = frozenset(
         "turbopages_get",
         "keyword_bids_forecast",
         "phrases_forecast",
+        "retargeting_lists_list",
+        "audience_targets_list",
+        "retargeting_list_create",
+        "retargeting_list_update",
+        "retargeting_list_delete",
+        "audience_target_add",
+        "audience_target_state",
     }
 )
 
@@ -75,4 +82,4 @@ def test_registry_has_all_actions():
 
 
 def test_registration_imports_referenced():
-    assert len(server_mod._ACTION_MODULES) == 19
+    assert len(server_mod._ACTION_MODULES) == 20

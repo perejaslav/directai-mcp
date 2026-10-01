@@ -311,9 +311,9 @@ def test_json_schema_no_secrets(monkeypatch, tmp_path, capsys):
     assert payload["schema"] == 1
     assert payload["overall"] in ("ok", "warn", "fail")
     assert payload["preinstall"] is False
-    assert len(payload["checks"]) == 10
+    assert len(payload["checks"]) == 11
     ids = sorted([c.get("id") for c in payload["checks"]])
-    assert ids == ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]
+    assert ids == ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k"]
     assert all(c.get("status") in ("OK", "WARN", "FAIL") for c in payload["checks"])
 
 
@@ -329,6 +329,7 @@ def test_doctor_all_mocked_exit_zero(monkeypatch):
     monkeypatch.setattr(d, "check_api", lambda skip_api=False: _result("OK"))
     monkeypatch.setattr(d, "check_hermes", lambda *a, **k: _result("OK"))
     monkeypatch.setattr(d, "check_audience", lambda *a, **k: _result("OK"))
+    monkeypatch.setattr(d, "check_retargeting", lambda *a, **k: _result("OK"))
     monkeypatch.setattr(d, "check_plans_dir", lambda *a, **k: _result("OK"))
     results, code = d.run_doctor()
     assert code == 0

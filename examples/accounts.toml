@@ -39,3 +39,8 @@ reports_dir = "~/.directai/reports"
 
 [guard]
 guard = true                   # test-campaign write protection
+
+# v1.10.0 (Б4): запись ретаргетинга выключена по умолчанию.
+# Включение — только явным write_enabled = true (как [audience]).
+# [retargeting]
+# write_enabled = false

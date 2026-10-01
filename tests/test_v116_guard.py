@@ -306,7 +306,7 @@ def test_write_action_params_have_no_config_fields():
 def test_write_hooks_have_no_write_primitives():
     """prepare/apply/verify любого write-действия не пишут на диск."""
     writes = {n: a for n, a in ACTIONS.items() if a.mode == "write"}
-    assert len(writes) == 17
+    assert len(writes) == 22
     for name, act in writes.items():
         for hook in (act.prepare, act.apply, act.verify):
             assert hook is not None, name

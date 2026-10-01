@@ -26,6 +26,22 @@ AUDIENCE_WRITE_DISABLED = (
     "запись в Аудитории выключена ([audience] write_enabled=false)."
 )
 
+# v1.10.0 (Б4): запись ретаргетинга выключена по умолчанию, включается
+# только явным [retargeting] write_enabled=true. Текст — в стиле остальных
+# блокировок guard, с инструкцией по включению.
+RETARGETING_WRITE_DISABLED = (
+    "запись ретаргетинга выключена ([retargeting] write_enabled=false). "
+    "Включить: секция [retargeting] write_enabled = true в конфиге."
+)
+
+RETARGETING_WRITE_ACTIONS = frozenset({
+    "retargeting_list_create",
+    "retargeting_list_update",
+    "retargeting_list_delete",
+    "audience_target_add",
+    "audience_target_state",
+})
+
 # Бюджетные ключи параметров (нормализация: нижний регистр без подчеркиваний).
 # Смена стратегии — тоже бюджетная операция (п.1 ТЗ): ключ strategy входит сюда.
 _BUDGET_KEYS = frozenset({
@@ -496,6 +512,14 @@ async def check_write(
         if not ctx.settings.audience_write_enabled:
             raise GuardBlocked(AUDIENCE_WRITE_DISABLED)
         await _require_audience_test_segment(ctx, params.get("segment_id"))
+        return
+    if action in RETARGETING_WRITE_ACTIONS:
+        # v1.10.0 (Б4): запись ретаргетинга — только при явном
+        # [retargeting] write_enabled=true. Дальше — тот же guard:
+        # plan_write → подтверждение человека → apply_write; тонкие проверки
+        # (использование условия, совместимость типов, префикс TEST) — в prepare.
+        if not ctx.settings.retargeting_write_enabled:
+            raise GuardBlocked(RETARGETING_WRITE_DISABLED)
         return
     if action == "campaigns_create":
         name = params.get("name", "")

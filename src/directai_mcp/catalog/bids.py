@@ -693,9 +693,10 @@ class ModifierSetOne(BaseModel):
 class ModifierAddOne(BaseModel):
     campaign_id: int | None = None
     adgroup_id: int | None = None
-    kind: Literal["REGIONAL", "MOBILE", "DESKTOP", "DESKTOP_ONLY"] = "REGIONAL"
+    kind: Literal["REGIONAL", "MOBILE", "DESKTOP", "DESKTOP_ONLY", "RETARGETING"] = "REGIONAL"
     region: str | None = None
     bid_modifier: int = 100
+    retargeting_condition_id: int | None = None
 
 
 class BidModifiersSetParams(GetActionParams):
@@ -902,6 +903,11 @@ async def _prepare_bid_modifiers_set(
                 f"Корректировка {item.id} ({found.get('Type')}) на {scope}: "
                 f"{_pct(old)} → {_pct(item.bid_modifier)}"
             )
+            if found.get("Type") == "RETARGETING_ADJUSTMENT" and int(item.bid_modifier) == 0:
+                warnings.append(
+                    f"ВНИМАНИЕ: корректировка {item.id} −100% (BidModifier=0): показы этой "
+                    "аудитории будут полностью отключены."
+                )
             warn = check_ratio(
                 rules.max_bid_ratio, old, item.bid_modifier, f"корректировка {item.id}"
             )
@@ -940,7 +946,27 @@ async def _prepare_bid_modifiers_set(
                     )
                 scope_body["AdGroupId"] = int(add.adgroup_id)
                 scope = f"группу {add.adgroup_id}"
-            if add.kind == "REGIONAL":
+            if add.kind == "RETARGETING":
+                # v1.10.0 (Б4): корректировка для аудитории (до 100 на scope;
+                # условие обязано быть типа RETARGETING — проверяет API).
+                if add.retargeting_condition_id is None:
+                    raise ValueError("add RETARGETING: укажите retargeting_condition_id.")
+                scope_body["RetargetingAdjustments"] = [
+                    {"RetargetingConditionId": int(add.retargeting_condition_id),
+                     "BidModifier": int(add.bid_modifier)}
+                ]
+                preview_lines.append(
+                    f"RETARGETING условие {add.retargeting_condition_id} на {scope}: "
+                    f"{_pct(add.bid_modifier)}"
+                )
+                if int(add.bid_modifier) == 0:
+                    warnings.append(
+                        "ВНИМАНИЕ: корректировка −100% (BidModifier=0): показы этой "
+                        "аудитории будут полностью отключены. Так исключают, например, "
+                        "текущих клиентов; в конверсионных стратегиях это меняет "
+                        "целевую CPA/ДРР, а не ставку."
+                    )
+            elif add.kind == "REGIONAL":
                 if not add.region:
                     raise ValueError("add REGIONAL: укажите region.")
                 rid, rname = await _resolve_region(ctx, add.region)
@@ -1026,7 +1052,23 @@ async def _verify_bid_modifiers_set(ctx: Ctx, entry: AccountEntry, plan) -> dict
                 live = await _modifiers_by_scope(client, entry.login, scopes_c, scopes_g)
                 for a in add_items:
                     want = int(a["bid_modifier"])
-                    if a.get("kind") == "REGIONAL" and a.get("region"):
+                    if a.get("kind") == "RETARGETING" and a.get("retargeting_condition_id"):
+                        try:
+                            want_cid = int(a["retargeting_condition_id"])
+                        except (TypeError, ValueError):
+                            want_cid = None
+                        hit = any(
+                            isinstance(m.get("RetargetingAdjustment"), dict)
+                            and m["RetargetingAdjustment"].get("RetargetingConditionId") == want_cid
+                            and m["RetargetingAdjustment"].get("BidModifier") == want
+                            for m in live
+                        )
+                        after[f"add:RETARGETING:{a['retargeting_condition_id']}"] = (
+                            "OK" if hit else "НЕ НАЙДЕНО")
+                        if not hit:
+                            bad.append(
+                                f"add RETARGETING {a['retargeting_condition_id']}: не подтверждено")
+                    elif a.get("kind") == "REGIONAL" and a.get("region"):
                         try:
                             rid, _ = await _resolve_region(ctx, a["region"])
                         except ValueError:

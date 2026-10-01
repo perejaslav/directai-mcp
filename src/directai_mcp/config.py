@@ -70,6 +70,9 @@ class Settings:
     # Аудитории: запись выключена по умолчанию (мёрж feat/audience-api в main).
     # Включение — только явным [audience] write_enabled=true в accounts.toml.
     audience_write_enabled: bool = False
+    # v1.10.0 (Б4): ретаргетинг — запись выключена по умолчанию.
+    # Включение — только явным [retargeting] write_enabled=true.
+    retargeting_write_enabled: bool = False
     # v1.6.0 (B3): основная цель. Ключ — алиас кабинета, значение — id цели строкой.
     primary_goal_by_account: dict[str, str] = field(default_factory=dict)
     # v1.6.0 (B3): переопределение по кампании. Ключ — (алиас, campaign_id).
@@ -184,6 +187,11 @@ def load_settings(path: Path | None = None) -> Settings:
         raise ConfigError(f"invalid [audience] section in {cfg_path}")
     audience_write_enabled = bool(audience_section.get("write_enabled", False))
 
+    retargeting_section = data.get("retargeting", {}) or {}
+    if not isinstance(retargeting_section, dict):
+        raise ConfigError(f"invalid [retargeting] section in {cfg_path}")
+    retargeting_write_enabled = bool(retargeting_section.get("write_enabled", False))
+
     # v1.6.0 (B3): основная цель. Уровень кабинета:
     # [aliases.<имя>] primary_conversion_goal_id (также [accounts.<имя>]
     # legacy). Переопределение по кампании:
@@ -237,6 +245,7 @@ def load_settings(path: Path | None = None) -> Settings:
         legacy_sections=tuple(legacy),
         reports_dir=reports_dir,
         audience_write_enabled=audience_write_enabled,
+        retargeting_write_enabled=retargeting_write_enabled,
         units_warn_pct=units_warn_pct,
         counter_visits_warn_pct=counter_visits_warn_pct,
         primary_goal_by_account=primary_by_account,
