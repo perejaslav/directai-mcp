@@ -713,9 +713,17 @@ _MOD_SUBFIELDS = {
     "DesktopAdjustmentFieldNames": ["BidModifier"],
     "DesktopOnlyAdjustmentFieldNames": ["BidModifier"],
     "SmartTvAdjustmentFieldNames": ["BidModifier"],
+    # v1.10.2: эти 5 блоков отсутствовали — read-back add/set их никогда не
+    # подтверждал (живой кейс: RETARGETING с BidModifier=0 создан, журнал #73,
+    # а verify вернул «не подтверждено», хотя get показывал −100% Enabled=YES).
+    "DemographicsAdjustmentFieldNames": ["BidModifier"],
+    "RetargetingAdjustmentFieldNames": ["RetargetingConditionId", "BidModifier"],
     "RegionalAdjustmentFieldNames": ["RegionId", "BidModifier"],
     "VideoAdjustmentFieldNames": ["BidModifier"],
     "SmartAdAdjustmentFieldNames": ["BidModifier"],
+    "SerpLayoutAdjustmentFieldNames": ["BidModifier"],
+    "IncomeGradeAdjustmentFieldNames": ["BidModifier"],
+    "AdGroupAdjustmentFieldNames": ["BidModifier"],
 }
 _MOD_RANGES = {"REGIONAL": (10, 1300)}
 
@@ -841,9 +849,16 @@ def _mod_value(item: dict) -> int | None:
         "DesktopAdjustment",
         "DesktopOnlyAdjustment",
         "SmartTvAdjustment",
+        # v1.10.2: без этих ключей set/delete-превью и read-back показывали
+        # «—» / «не подтверждено» для таких корректировок.
+        "DemographicsAdjustment",
+        "RetargetingAdjustment",
         "RegionalAdjustment",
         "VideoAdjustment",
         "SmartAdAdjustment",
+        "SerpLayoutAdjustment",
+        "IncomeGradeAdjustment",
+        "AdGroupAdjustment",
     ):
         sub = item.get(key)
         if isinstance(sub, dict) and isinstance(sub.get("BidModifier"), int):
@@ -857,7 +872,13 @@ _ADD_KEY = {
     "DESKTOP": "DesktopAdjustment",
     "DESKTOP_ONLY": "DesktopOnlyAdjustment",
 }
-_ADD_SINGLE = {"MOBILE": "MobileAdjustment", "DESKTOP": "DesktopAdjustment"}
+_ADD_SINGLE = {
+    "MOBILE": "MobileAdjustment",
+    "DESKTOP": "DesktopAdjustment",
+    # v1.10.2: без этого add DESKTOP_ONLY падал с KeyError, а read-back
+    # никогда не подтверждал (ключ "" в verify).
+    "DESKTOP_ONLY": "DesktopOnlyAdjustment",
+}
 
 
 async def _prepare_bid_modifiers_set(

@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## v1.10.2 (2026-10-01) — read-back корректировок с BidModifier=0
+
+- Причина журнала #73: verify `bid_modifiers_set` не запрашивал у API блоки
+  `Retargeting/Demographics/SerpLayout/IncomeGrade/AdGroup` (`_MOD_SUBFIELDS`),
+  поэтому такие корректировки никогда не подтверждались (включая −100%);
+  плюс `add DESKTOP_ONLY` падал с `KeyError` (`_ADD_SINGLE`). Исправлено:
+  недостающие `*AdjustmentFieldNames` добавлены, `_mod_value` расширен,
+  `DESKTOP_ONLY` добавлен в `_ADD_SINGLE`.
+- Тесты: `tests/test_v1102_modifiers_verify.py` (2: RETARGETING=0 и
+  DESKTOP_ONLY=0 end-to-end; оба падают на старом коде).
+
 ## v1.10.1 (2026-10-01) — guard ретаргетинга: ЕПК-группы и служебные цели
 
 - `audience_target_add`: `UNIFIED_AD_GROUP` совместим, если в
