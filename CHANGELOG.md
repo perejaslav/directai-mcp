@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## v1.7.1 (2026-10-01) — doctor: INFO по умолчанию, --preinstall
+
+- Проверки c (процессы) и d (блокировка файла): занятый exe при
+  работающих сессиях — INFO, а не ложная тревога; строго (c → WARN,
+  d → FAIL) — только флаг `doctor --preinstall` перед переустановкой.
+- README §7/§8.1, playbooks, SKILL: `doctor --preinstall` после
+  остановки процессов в каноническом блоке переустановки.
+
 ## v1.7.0 (2026-10-01) — connection doctor
 
 - CLI `directai-mcp doctor` (`src/directai_mcp/doctor.py`): 9 read-only
