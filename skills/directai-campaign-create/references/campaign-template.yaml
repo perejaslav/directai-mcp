@@ -1,0 +1,44 @@
+# Шаблон брифа кампании (все данные вымышлены, реальный файл не коммитить)
+login: example-login
+url: https://primer-okna.example/zamer
+regions: [213]
+product: Пластиковые окна с установкой за 1 день
+goal: Заявка с сайта
+counter: 12345678
+budget: 30000
+groups:
+  - name: Окна под ключ
+    phrases:
+      - пластиковые окна под ключ цена
+      - окна пвх с установкой недорого
+    negatives:
+      - бесплатно
+      - вакансии
+      - своими руками
+    ads:
+      - titles:
+          - Окна под ключ за 1 день
+          - Пластиковые окна от example
+        texts:
+          - Замер бесплатно. Установка за 1 день, гарантия 5 лет.
+          - Окна ПВХ с установкой. Замер сегодня — монтаж завтра.
+        display_url_path: okna-pod-klyuch
+      - titles:
+          - Окна ПВХ недорого с монтажом
+          - Замена окон за 1 день
+        texts:
+          - Цены от завода. Бесплатный замер и вывоз мусора.
+          - Поставим окна за день. Гарантия по договору 5 лет.
+        display_url_path: zamena-okon
+    sitelinks:
+      - title: Цены
+        href: https://primer-okna.example/ceny
+        description: Цены от завода без посредников
+      - title: Отзывы
+        href: https://primer-okna.example/otzyvy
+      - title: Контакты
+        href: https://primer-okna.example/kontakty
+    callouts:
+      - Замер бесплатно
+      - Монтаж за 1 день
+      - Гарантия 5 лет
