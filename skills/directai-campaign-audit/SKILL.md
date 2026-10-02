@@ -19,7 +19,9 @@ description: "Разбор кампании Яндекс Директа: нас�
 1. `campaigns_get` — настройки, стратегия, регионы, счётчик, цели,
    основная цель (`primary_conversion_goal_id`: param > campaign > account > none).
    Перед оптимизацией — `get_operation_log` (что уже меняли через DirectAI).
-2. `stats_compare` — динамика по умолчанию 14 vs 14 дней.
+2. `stats_compare` — динамика по умолчанию 14 vs 14 дней (явные даты
+   `period_a_from/to` + `period_b_from/to`, пресетов периода у него нет;
+   A — свежий период, B — прошлый).
 3. Детализация: `stats_adgroups`, `stats_ads`, `stats_keywords`,
    `stats_search_queries`, `stats_placements` (если есть показы в сетях),
    `stats_devices`, `stats_regions`.
@@ -54,7 +56,13 @@ description: "Разбор кампании Яндекс Директа: нас�
 `reports/audit_<login>_<campaign>_<дата>.md`:
 
 1. Итог в 3 строках.
-2. Цифры — таблица `stats_compare` как есть.
+2. Цифры — таблица `stats_compare` с правилом Δ: Δ всегда = A−B (свежий минус
+   прошлый: рост со знаком +, падение −). Если инструмент отдал B−A —
+   перевернуть знаки Δ/Δ% в отчёте и подписать формулу под таблицей.
+   Конверсии и CPA во всём отчёте — только из `stats_compare`; цифры срезов
+   (`stats_adgroups`, `stats_ads`, `stats_keywords`, `stats_search_queries`,
+   `stats_placements`, `stats_devices`, `stats_regions`) — только для
+   долей/распределения, с пометкой об этом.
 3. Проблемы по важности (со ссылкой на пункт checklist).
 4. План действий: пункты с указанием инструмента записи
    (`negatives_set`, `keywords_state`, `ads_update`, `extensions_create`,
