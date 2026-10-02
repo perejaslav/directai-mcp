@@ -47,6 +47,9 @@ EXPECTED = frozenset(
         "changes_check",
         "counter_check",
         "metrika_goals_list",
+        "metrika_traffic",
+        "metrika_goals_report",
+        "metrika_bytime",
         "accounts_discover",
         "accounts_check",
         "accounts_balance",
@@ -82,4 +85,4 @@ def test_registry_has_all_actions():
 
 
 def test_registration_imports_referenced():
-    assert len(server_mod._ACTION_MODULES) == 20
+    assert len(server_mod._ACTION_MODULES) == 21
