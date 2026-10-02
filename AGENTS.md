@@ -164,10 +164,39 @@ read-only: kill/install/правки конфига — только с явно
   `ambiguous`/`failed`/`incomplete` — отклонять до API, не обходить).
 - CPA/CR — по основной цели (`primary_conversion_goal_id`: param > campaign
   > account > none; блок `goal {id, label, source}` рядом с атрибуцией).
-- Перед оптимизацией читать журнал операций (`get_operation_log`) и считать
-  CPA по основной цели. Код журнала не трогать.
 
-## 10. Ретаргетинг (Б4, v1.10.0)
+## 10. Скиллы-сценарии (v1.11.0)
+
+- `directai-campaign-audit` — разбор одной кампании (только чтение): первым
+  шагом `campaign_journal`, затем `campaigns_get` → `stats_compare` (14 vs 14)
+  → срезы → гигиена → отчёт и план БЕЗ выполнения. Сравнение периодов — только
+  `stats_compare`; Δ = A−B, Δ% = (A−B)/B × 100.
+- `directai-campaign-create` — каскад `campaigns_create` → `adgroups_create` →
+  `keywords_add` → `ads_create` → `extensions_create` → `negatives_set`,
+  каждый шаг отдельным планом с read-back; бюджет — только цифрой пользователя.
+- Из скилла аудита записей нет: только предложить пункты плана.
+
+## 11. Отчёты Метрики (v1.12.0, только чтение)
+
+- `metrika_traffic`, `metrika_goals_report`, `metrika_bytime`,
+  `metrika_direct_cpa` — визиты/отказы/цели/CPA по кампаниям Директа.
+- Сопоставление кампаний в `metrika_direct_cpa`: ID → ID+1e8 → уникальное
+  имя; способ — в колонке «Связь», несопоставленные — отдельными блоками.
+- CPA/CR по Метрике брать из вывода инструмента, не пересчитывать вручную.
+- Будущие даты отклоняются до API (v1.12.1, код 4001 у Директа).
+
+## 12. Журнал кампании (v1.13.0)
+
+- Перед оптимизацией — `campaign_journal(account, campaign_id)`: история
+  правок, снимки результатов и заметки одной кампании (пишет
+  `reports/journals/<login>/<campaign_id>.md`).
+- CPA считать по основной цели; после работы — `campaign_journal_snapshot`
+  за период (зафиксировать результаты) и заметка `campaign_journal_note`
+  с `kind="decision"` (что решили).
+- Журнал видит только операции DirectAI. Ручные правки в кабинете в него не
+  попадают — для них `changes_check`. Код журнала не трогать.
+
+## 13. Ретаргетинг (Б4, v1.10.0)
 
 - Исключение аудитории — только корректировкой ставки −100%
   (`bid_modifiers_set`, вид RETARGETING), а не условием ретаргетинга.
