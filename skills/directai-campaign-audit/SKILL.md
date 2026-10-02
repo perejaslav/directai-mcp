@@ -26,7 +26,10 @@ description: "Разбор кампании Яндекс Директа: нас�
    `stats_search_queries`, `stats_placements` (если есть показы в сетях),
    `stats_devices`, `stats_regions`.
 4. Гигиена: `negatives_audit`, `extensions_list`, `moderation_check`,
-   `counter_check`, `bid_modifiers_get`.
+   `counter_check`, `bid_modifiers_get`. Если доступен `metrika_direct_cpa` —
+   строка кампании (визиты, отказы, CPA по Метрике) и проверка
+   «клики→визиты» (флаг расхождения > 30%): цифры — из его шапки и строк,
+   не пересчитывать.
 5. Для фраз с показами при ручных ставках — `keyword_bids_forecast`.
    Для новых фраз спрос/цены — `phrases_forecast` (только чтение).
 6. Проверки — строго по `references/checklist.md` (порог + что сказать).

@@ -26,6 +26,7 @@ from directai_mcp.catalog import extensions as extensions_mod
 from directai_mcp.catalog import forecast as forecast_mod
 from directai_mcp.catalog import keywords as keywords_mod
 from directai_mcp.catalog import limits as limits_mod
+from directai_mcp.catalog import metrika_cpa as metrika_cpa_mod
 from directai_mcp.catalog import metrika_reports as metrika_reports_mod
 from directai_mcp.catalog import moderation as moderation_mod
 from directai_mcp.catalog import negatives as negatives_mod
@@ -50,6 +51,7 @@ _ACTION_MODULES = (
     extensions_mod,
     forecast_mod,
     keywords_mod,
+    metrika_cpa_mod,
     metrika_reports_mod,
     moderation_mod,
     negatives_mod,
