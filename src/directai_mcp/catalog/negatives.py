@@ -286,10 +286,14 @@ class NegativesSetParams(GetActionParams):
 async def _current_negatives(
     ctx: Ctx, entry: AccountEntry, campaign_ids: list[int],
     adgroup_ids: list[int],
-) -> tuple[dict[int, list[str]], dict[int, list[str]]]:
-    """Текущие минус-фразы кампаний и групп (read-only, для add/preview)."""
+) -> tuple[dict[int, list[str]], dict[int, list[str]], dict[int, int]]:
+    """Текущие минус-фразы кампаний и групп (read-only, для add/preview).
+
+    Третий элемент — кампания каждой группы {gid: cid} (v1.13.0, журнал).
+    """
     camp: dict[int, list[str]] = {}
     groups: dict[int, list[str]] = {}
+    group_campaigns: dict[int, int] = {}
     client = ctx.direct()
     try:
         if campaign_ids:
@@ -311,7 +315,7 @@ async def _current_negatives(
                 items = await client.get_all(
                     "adgroups",
                     {"SelectionCriteria": {"Ids": ids},
-                     "FieldNames": ["Id", "NegativeKeywords"]},
+                     "FieldNames": ["Id", "CampaignId", "NegativeKeywords"]},
                     entry.login,
                     "AdGroups",
                 )
@@ -319,9 +323,16 @@ async def _current_negatives(
                     if isinstance(item, dict) and item.get("Id") is not None:
                         groups[int(item["Id"])] = [
                             str(p) for p in _items(item.get("NegativeKeywords"))]
+                        # v1.13.0: кампания группы — для привязки журнала.
+                        if item.get("CampaignId") is not None:
+                            try:
+                                group_campaigns[int(item["Id"])] = int(
+                                    item["CampaignId"])
+                            except (TypeError, ValueError):
+                                pass
     finally:
         await client.aclose()
-    return camp, groups
+    return camp, groups, group_campaigns
 
 
 async def _current_set_negatives(
@@ -369,8 +380,9 @@ async def _prepare_negatives_set(
     # Валидация — до любых write-запросов (только read).
     current_camp: dict[int, list[str]] = {}
     current_groups: dict[int, list[str]] = {}
+    group_campaigns: dict[int, int] = {}
     if params.campaign_ids or params.adgroup_ids:
-        current_camp, current_groups = await _current_negatives(
+        current_camp, current_groups, group_campaigns = await _current_negatives(
             ctx, entry, params.campaign_ids, params.adgroup_ids)
     if params.campaign_ids:
         merged: dict[int, list[str]] = {}
@@ -500,8 +512,15 @@ async def _prepare_negatives_set(
         )
         if upd.negatives is None:
             preview.append(f"набор {upd.id}: обновление")
+    group_cids = sorted({c for c in group_campaigns.values() if c})
     return {
-        "before": None,
+        # v1.13.0: кампании правок (прямые + через группы) — для журнала.
+        "before": {
+            "campaign_ids": sorted(set(params.campaign_ids) | set(group_cids)),
+            "adgroup_campaigns": {
+                gid: group_campaigns.get(gid) for gid in params.adgroup_ids
+            } if params.adgroup_ids else {},
+        },
         "requests": requests,
         "preview": "Будет выполнено:\n" + "\n".join(f"- {line}" for line in preview),
         "warnings": [],

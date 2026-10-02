@@ -580,8 +580,21 @@ async def _prepare_bids_set(ctx: Ctx, entry: AccountEntry, params: BaseModel) ->
                 bodies.append(body)
                 preview_lines.append(f"{field} {scope_id}: " + ", ".join(desc))
             requests.append(("keywordbids", "set", {"KeywordBids": bodies}, "v5"))
+    # v1.13.0: кампании правок (прямые + через фразы/группы из read выше) —
+    # для привязки журнала кампании.
+    seen_cids: set[int] = {int(c) for c in params.campaign_ids}
+    for item in items:
+        try:
+            if item.get("CampaignId") is not None:
+                seen_cids.add(int(item["CampaignId"]))
+        except (TypeError, ValueError):
+            pass
+    journal_before: dict = {
+        "bids": before,
+        "campaign_ids": sorted(seen_cids),
+    }
     return {
-        "before": before or None,
+        "before": journal_before,
         "requests": requests,
         "preview": "Будет выполнено:\n" + "\n".join(f"- {line}" for line in preview_lines),
         "warnings": warnings,
@@ -918,7 +931,12 @@ async def _prepare_bid_modifiers_set(
                 raise ValueError(
                     f"корректировка {item.id}: BidModifier {item.bid_modifier} вне {lo}..{hi}."
                 )
-            before[str(item.id)] = {"value": old, "type": found.get("Type")}
+            before[str(item.id)] = {
+                "value": old,
+                "type": found.get("Type"),
+                # v1.13.0: кампания корректировки — для привязки журнала.
+                "campaign_id": found.get("CampaignId"),
+            }
             set_bodies.append({"Id": int(item.id), "BidModifier": int(item.bid_modifier)})
             preview_lines.append(
                 f"Корректировка {item.id} ({found.get('Type')}) на {scope}: "
@@ -935,6 +953,7 @@ async def _prepare_bid_modifiers_set(
             if warn:
                 warnings.append(warn)
         add_bodies: list[dict] = []
+        add_campaigns: list[int] = []  # v1.13.0: кампании add-scope групп
         for add in params.add_items:
             if (add.campaign_id is None) == (add.adgroup_id is None):
                 raise ValueError("add: укажите ровно один из campaign_id/adgroup_id.")
@@ -967,6 +986,11 @@ async def _prepare_bid_modifiers_set(
                     )
                 scope_body["AdGroupId"] = int(add.adgroup_id)
                 scope = f"группу {add.adgroup_id}"
+                # v1.13.0: кампания группы — для привязки журнала.
+                try:
+                    add_campaigns.append(int(groups[0]["CampaignId"]))
+                except (TypeError, ValueError, KeyError):
+                    pass
             if add.kind == "RETARGETING":
                 # v1.10.0 (Б4): корректировка для аудитории (до 100 на scope;
                 # условие обязано быть типа RETARGETING — проверяет API).
@@ -1008,13 +1032,21 @@ async def _prepare_bid_modifiers_set(
             if found is None:
                 raise ValueError(f"корректировка {mid} не найдена.")
             scope = await _own_modifier(ctx, client, entry.login, found, str(mid))
-            before[f"delete:{mid}"] = {"value": _mod_value(found), "type": found.get("Type")}
+            before[f"delete:{mid}"] = {
+                "value": _mod_value(found),
+                "type": found.get("Type"),
+                # v1.13.0: кампания корректировки — для привязки журнала.
+                "campaign_id": found.get("CampaignId"),
+            }
             preview_lines.append(
                 f"Удалить корректировку {mid} ({found.get('Type')}) на {scope}: "
                 f"{_pct(_mod_value(found))} → —"
             )
     finally:
         await client.aclose()
+    if add_campaigns:
+        # v1.13.0: ключ campaign_ids собирает extract_campaign_ids.
+        before["campaign_ids"] = sorted(set(add_campaigns))
     requests = []
     if add_bodies:
         requests.append(("bidmodifiers", "add", {"BidModifiers": add_bodies}, "v5"))

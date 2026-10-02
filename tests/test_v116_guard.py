@@ -161,6 +161,7 @@ _WRITE_MODES = {"w", "a", "x", "+", "w+", "a+", "x+", "r+", "wb", "ab", "xb",
 _MUTATING_ALLOWED = {"cli.py", "fmt.py", "log.py",
                      "catalog/accounts.py", "safety/journal.py",
                      "catalog/audience_write.py", "catalog/common.py",
+                     "catalog/campaign_journal.py",  # v1.13.0: только локально
                      "safety/plans.py", "doctor.py"}
 
 

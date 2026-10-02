@@ -578,7 +578,16 @@ async def _prepare_adgroups_update(
         bodies.append(body)
         lines.append(f"{current[item.id].get('Name')} ({item.id}): " + "; ".join(desc))
     return {
-        "before": {gid: current[gid].get("Name") for gid in ids},
+        # v1.13.0: campaign_ids — id кампании каждой группы (CampaignId уже
+        # запрошен выше), для привязки журнала кампании.
+        "before": {
+            "names": {gid: current[gid].get("Name") for gid in ids},
+            "campaign_ids": sorted({
+                int(current[gid].get("CampaignId"))
+                for gid in ids
+                if current[gid].get("CampaignId") is not None
+            }),
+        },
         "requests": [("adgroups", "update", {"AdGroups": bodies})],
         "preview": "Будет выполнено:\n" + "\n".join(f"- {line}" for line in lines),
         "warnings": warnings,

@@ -1,5 +1,31 @@
 # CHANGELOG
 
+## v1.13.0 (2026-10-02) — журнал кампании (BACKLOG п.3)
+
+- Привязка операций к кампаниям: новая таблица `operation_campaigns`
+  (схема `operations` не менялась); `extract_campaign_ids` покрывает все
+  22 write-действия (campaign_id из params/before/after; `campaigns_create` —
+  из after; групповые правки — CampaignId в before: keywords_add, ads_create,
+  adgroups_update, negatives_set, bids_set, bid_modifiers_set,
+  audience_target_add); backfill старых записей при `connect` (идемпотентно);
+  без привязки — warning в лог, не падение.
+- Снимки: `campaign_snapshots` (direct: показы/клики/расход/CTR/CPC/конверсии;
+  metrika: визиты/отказы/цели/CPA; цель по умолчанию — основная;
+  будущие даты отклоняются до API, как в v1.12.1). Заметки: `campaign_notes`
+  (hypothesis|decision|observation|todo).
+- Инструменты (все read, без write API Директа и планов):
+  `campaign_journal` (сборка + файл
+  `reports/journals/<login>/<campaign_id>.md`: шапка, результаты с Δ=A−B/Δ% от B,
+  история с пометкой ⚠ unverified, заметки с todo сверху, линковка
+  «правка ↔ ближайший снимок до/после» без выводов), `campaign_journal_snapshot`,
+  `campaign_journal_note`; `get_operation_log(campaign_id=...)`.
+- Скиллы: audit — первым шагом `campaign_journal`, в конце snapshot + заметки;
+  create — после создания заметка `decision` с брифом. README §13 + правило
+  «перед оптимизацией — `campaign_journal`».
+- Тесты: `tests/test_v1130_campaign_journal.py` (36: extract ×25+покрытие+игнор,
+  backfill, рендер ×3, фильтр лога ×2, будущие даты, заметки, файл);
+  обновлены `test_registry.py` (82 действия) и `test_v116_guard.py`.
+
 ## v1.12.1 (2026-10-02) — хотфикс counter_check: будущие даты
 
 - Причина падения (воспроизведено живьём): Reports API отвечает 4001

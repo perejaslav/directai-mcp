@@ -826,7 +826,8 @@ async def _prepare_target_add(ctx: Ctx, entry: AccountEntry, params: BaseModel) 
         f"- {AND_OR_NOTE}"
     )
     return {
-        "before": None,
+        # v1.13.0: кампания группы — для привязки журнала.
+        "before": {"campaign_id": campaign_id, "adgroup_id": int(params.adgroup_id)},
         "requests": [("audiencetargets", "add", {"AudienceTargets": [body]}, "v5")],
         "preview": preview,
         "warnings": warnings,

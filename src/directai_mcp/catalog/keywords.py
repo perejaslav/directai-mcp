@@ -636,7 +636,9 @@ async def _prepare_keywords_add(
     if len(preview_lines) > 10:
         preview_lines = preview_lines[:10] + [f"… и ещё {len(fresh) - 10}"]
     return {
-        "before": None,
+        # v1.13.0: campaign_id группы уже известен — кладём в before,
+        # чтобы журнал кампании привязал операцию (extract_campaign_ids).
+        "before": {"campaign_id": campaign_id, "adgroup_id": params.adgroup_id},
         "requests": [
             (
                 "keywords",

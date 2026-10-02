@@ -702,5 +702,23 @@ directai-mcp doctor --preinstall   # строгая проверка перед 
 `stats_*`/`stats_compare`: блок `Цель: id=..., label=..., source=param|campaign|account|none`
 рядом с атрибуцией; CPA/CR — по этой цели; при `source=none` — как в v1.5.0
 + warning «основная цель не задана, CPA по всем целям».
-Правило для агентов: перед оптимизацией читать журнал операций
-(`get_operation_log`) и считать CPA по основной цели.
+Правило для агентов: перед оптимизацией читать журнал кампании
+(`campaign_journal`) и считать CPA по основной цели.
+
+## 13. Журнал кампании (v1.13.0)
+
+Один Markdown-файл на кампанию: что меняли, почему и что стало с результатами
+(`<reports_dir>/journals/<login>/<campaign_id>.md`, перезаписывается при каждом
+`campaign_journal`; источник правды — `journal.sqlite`). Привязка операций —
+таблица `operation_campaigns` (схему `operations` не меняли; старые записи
+привязаны backfill при первом `connect`). Снимки результатов —
+`campaign_snapshots` (`direct`: показы/клики/расход/CTR/CPC/конверсии из
+`stats_compare`-логики; `metrika`: визиты/отказы/цели/CPA из
+`metrika_direct_cpa`-логики; цель по умолчанию — основная; будущие даты
+отклоняются до API, как в v1.12.1). Заметки — `campaign_notes`
+(`hypothesis|decision|observation|todo`).
+
+Инструменты (все read; заметки и снимки пишут только локально, без write API
+Директа и без планов): `campaign_journal` (сборка + файл),
+`campaign_journal_snapshot`, `campaign_journal_note`, фильтр
+`get_operation_log(campaign_id=...)`. Δ в таблице снимков: Δ = A−B, Δ% от B.

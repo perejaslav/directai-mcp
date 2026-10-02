@@ -19,6 +19,9 @@ EXPECTED = frozenset(
         "stats_custom",
         "campaigns_list",
         "campaigns_get",
+        "campaign_journal",
+        "campaign_journal_snapshot",
+        "campaign_journal_note",
         "campaigns_create",
         "campaigns_update",
         "campaigns_state",
@@ -86,4 +89,4 @@ def test_registry_has_all_actions():
 
 
 def test_registration_imports_referenced():
-    assert len(server_mod._ACTION_MODULES) == 22
+    assert len(server_mod._ACTION_MODULES) == 23

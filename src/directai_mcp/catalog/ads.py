@@ -1474,8 +1474,11 @@ ADS_GROUP_TYPES = ("TEXT_AD_GROUP", "UNIFIED_AD_GROUP")
 
 async def _campaign_and_group_type(
     client, login: str, adgroup_id: int
-) -> tuple[str | None, str | None]:
-    """v1.1.18: тип кампании группы (предупреждение о конвертации TEXT_AD)."""
+) -> tuple[str | None, str | None, int | None]:
+    """v1.1.18: тип кампании группы (предупреждение о конвертации TEXT_AD).
+
+    v1.13.0: третьим возвращает id кампании (для привязки журнала).
+    """
     groups = await client.get_all(
         "adgroups",
         {
@@ -1487,7 +1490,8 @@ async def _campaign_and_group_type(
         "v501",
     )
     if not groups or groups[0].get("CampaignId") is None:
-        return None, None
+        return None, None, None
+    campaign_id = groups[0].get("CampaignId")
     group_type = groups[0].get("Type")
     camps = await client.get_all(
         "campaigns",
@@ -1500,8 +1504,8 @@ async def _campaign_and_group_type(
         "v501",
     )
     if not camps:
-        return None, group_type
-    return camps[0].get("Type"), group_type
+        return None, group_type, campaign_id
+    return camps[0].get("Type"), group_type, campaign_id
 
 
 def _conversion_note(
@@ -1574,7 +1578,7 @@ async def _prepare_ads_create(ctx: Ctx, entry: AccountEntry, params: BaseModel) 
     # TEXT_AD/RESPONSIVE_AD допустимы только в TEXT_AD_GROUP/UNIFIED_AD_GROUP.
     client = ctx.direct()
     try:
-        campaign_type, group_type = await _campaign_and_group_type(
+        campaign_type, group_type, campaign_id = await _campaign_and_group_type(
             client, entry.login, params.adgroup_id
         )
     finally:
@@ -1677,7 +1681,8 @@ async def _prepare_ads_create(ctx: Ctx, entry: AccountEntry, params: BaseModel) 
                 + f" [{_create_counters(item, 'RESPONSIVE_AD')}]"
             )
     return {
-        "before": None,
+        # v1.13.0: campaign_id группы — для привязки журнала кампании.
+        "before": {"campaign_id": campaign_id, "adgroup_id": params.adgroup_id},
         "requests": [
             (
                 "ads",

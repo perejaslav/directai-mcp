@@ -17,6 +17,7 @@ from directai_mcp.catalog import audience_segments as audience_segments_mod
 from directai_mcp.catalog import audience_write as audience_write_mod
 from directai_mcp.catalog import audiences as audiences_mod
 from directai_mcp.catalog import bids as bids_mod
+from directai_mcp.catalog import campaign_journal as campaign_journal_mod
 from directai_mcp.catalog import campaigns as campaigns_mod
 from directai_mcp.catalog import changes as changes_mod
 from directai_mcp.catalog import counters as counters_mod
@@ -44,6 +45,7 @@ _ACTION_MODULES = (
     audiences_mod,
     bids_mod,
     campaigns_mod,
+    campaign_journal_mod,
     changes_mod,
     counters_mod,
     dictionaries_mod,
@@ -300,13 +302,17 @@ def build_server(sandbox: bool = False) -> FastMCP:
         return await do_apply_write(ctx, plan_id, acknowledge_warnings)
 
     @mcp.tool()
-    def get_operation_log(limit: int = 20, account: str | None = None) -> str:
-        """Последние операции записи из журнала."""
+    def get_operation_log(
+        limit: int = 20,
+        account: str | None = None,
+        campaign_id: int | None = None,
+    ) -> str:
+        """Последние операции записи из журнала (фильтр по кампании)."""
         try:
             ctx = _ctx()
         except (ConfigError, TokenMissingError) as e:
             return f"Ошибка конфигурации: {e}"
-        return do_get_log(ctx, limit, account)
+        return do_get_log(ctx, limit, account, campaign_id)
 
     return mcp
 
@@ -506,7 +512,12 @@ async def do_apply_write(
     return "\n".join(lines)
 
 
-def do_get_log(ctx: Ctx, limit: int = 20, account: str | None = None) -> str:
+def do_get_log(
+    ctx: Ctx,
+    limit: int = 20,
+    account: str | None = None,
+    campaign_id: int | None = None,
+) -> str:
     """Shared get_operation_log body (also used by tests)."""
     logins: set[str] | None = None
     if account and account != "all":
@@ -519,7 +530,7 @@ def do_get_log(ctx: Ctx, limit: int = 20, account: str | None = None) -> str:
         return "Журнал пуст."
     conn = journal_mod.connect(ctx.data_dir or data_dir())
     try:
-        rows = journal_mod.recent(conn, limit)
+        rows = journal_mod.recent(conn, limit, None, campaign_id)
     finally:
         conn.close()
     if logins is not None:
