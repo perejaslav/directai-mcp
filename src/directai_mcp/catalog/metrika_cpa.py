@@ -294,7 +294,7 @@ async def _cpa(ctx: Ctx, params: BaseModel) -> str:
     unmatched_direct: list[str] = []
 
     def _take_by_name(name: str) -> tuple[dict | None, str]:
-        """Запасной ключ: точное совпадение имени (ID не совпал).
+        """Запасной ключ 2: точное совпадение имени (ID не совпал).
 
         Только при единственном кандидате; иначе — несопоставлено.
         """
@@ -308,6 +308,10 @@ async def _cpa(ctx: Ctx, params: BaseModel) -> str:
     ):
         meta = metrika.pop(cid, None)
         match = "ID" if meta else ""
+        if meta is None and cid.isdigit():
+            # Запасной ключ 1: у старых кампаний OrderID = CampaignId + 1e8.
+            meta = metrika.pop(str(int(cid) + 100_000_000), None)
+            match = "ID+сдвиг" if meta else ""
         if meta is None:
             meta, match = _take_by_name(direct["name"])
         visits = meta["visits"] if meta else 0.0

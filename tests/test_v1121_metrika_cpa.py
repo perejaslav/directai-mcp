@@ -187,7 +187,25 @@ async def test_name_fallback_ambiguous(tmp_path, monkeypatch):
     assert "Без визитов в Метрике" in out and "K7 (7)" in out
 
 
-async def test_zero_goals_cpa_dash(tmp_path, monkeypatch):
+async def test_shift_fallback_match(tmp_path, monkeypatch):
+    """OrderID = CampaignId + 1e8: связь со сдвигом."""
+    _fake_login(monkeypatch, {"7": "K7"})
+    _fake_direct(monkeypatch, [
+        {"CampaignId": "7", "CampaignName": "K7", "Clicks": "100", "Cost": "900.00"},
+    ])
+    _fake_metrika(monkeypatch)
+
+    async def _stat(*a, **k):
+        shifted = str(7 + 100_000_000)
+        return _metrika_payload([(shifted, "K7", 95.0, 20.0, 9.0)])
+
+    monkeypatch.setattr(_cpa, "stat_table", _stat)
+    ctx = _ctx(tmp_path)
+    out = await ACTIONS["metrika_direct_cpa"].run(ctx, _params())
+    assert "K7 (7)" in out
+    assert "95.0%" in out
+    assert "ID+сдвиг" in out
+    assert "Без визитов в Метрике" not in out
     _fake_login(monkeypatch)
     _fake_direct(monkeypatch, [
         {"CampaignId": "7", "CampaignName": "K7", "Clicks": "100", "Cost": "100.00"},
