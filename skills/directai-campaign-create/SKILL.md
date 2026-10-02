@@ -26,10 +26,12 @@ description: "Создание кампании Яндекс Директа из
 4. Показать пользователю ВСЮ структуру таблицей → правки → явное «да».
    Без «да» — никаких `plan_write`.
 5. Запись строго по порядку, каждый шаг отдельным планом с read-back:
-   `campaigns_create` (ЕПК/UNIFIED_CAMPAIGN по умолчанию, затем сразу
-   `campaigns_state` suspend — состояние остановлена) → `adgroups_create`
-   (регионы обязательны) → `keywords_add` → `ads_create` (DisplayUrlPath
-   обязателен) → `extensions_create` → `negatives_set`.
+   `campaigns_create` (ЕПК/UNIFIED_CAMPAIGN по умолчанию; состояние — остановлена:
+   созданная OFF не трогать, если State=ON — сразу `campaigns_state` suspend)
+   → `adgroups_create` (регионы обязательны) → `keywords_add` → `ads_create`
+   (точные поля: `ad_type` + `responsive_ads[]`, DisplayUrlPath обязателен)
+   → `extensions_create` → `negatives_set` (после apply — всегда сверка
+   `negatives_audit`: apply может вернуть `unverified` при фактическом успехе).
 6. Итог: ID кампании/групп/объявлений и ссылки, пометка «кампания НЕ запущена».
    Запуск (`campaigns_state` resume) — только по отдельной команде пользователя.
 

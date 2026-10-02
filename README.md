@@ -568,6 +568,21 @@ directai-mcp doctor --preinstall   # строгая проверка перед 
 (`skills/directai-connection-doctor/`); установка локально — скопировать
 папку в `%USERPROFILE%\.agents\skills\directai-connection-doctor`.
 
+## 8.2. Скиллы сценариев (v1.11.0)
+
+- `directai-campaign-audit` (`skills/directai-campaign-audit/`): разбор кампании —
+  настройки, `stats_compare` 14 vs 14 (Δ = A−B, Δ% от базы B), срезы, гигиена,
+  план улучшений. Только чтение. Триггеры: «разбери кампанию», «почему просела»,
+  «что улучшить», ID кампании.
+- `directai-campaign-create` (`skills/directai-campaign-create/`): кампания
+  из описания или YAML (`references/campaign-template.yaml`) — бриф,
+  `phrases_forecast`, структура таблицей → «да», запись через планы, кампания
+  остаётся остановленной. Триггеры: «создай кампанию», описание товара/услуги.
+- Установка локально — скопировать папку скилла
+  в `%USERPROFILE%\.agents\skills\<имя>`. Общие правила обоих скиллов: бюджеты
+  не менять никогда, запись только prepare → подтверждение → apply → read-back,
+  DisplayUrlPath всегда заполнять.
+
 ## 9. Что отложено
 
 Вордстат, удалённый HTTP-режим, многопользовательский режим.

@@ -1,5 +1,24 @@
 # CHANGELOG
 
+## v1.11.0 (2026-10-02) — скиллы «Аудит кампании» и «Создание кампании»
+
+- Новый `skills/directai-campaign-audit` (только чтение): `campaigns_get` →
+  `stats_compare` 14 vs 14 (Δ = A−B, Δ% = (A−B)/B × 100, формула подписывается;
+  конверсии/CPA — только оттуда, срезы — лишь доли) → срезы → гигиена →
+  отчёт `reports/audit_<login>_<campaign>_<дата>.md` + план без выполнения.
+  Живой прогон: поисковая кампания боевого кабинета (~40 тыс. ₽ за 14 дней),
+  отчёт не коммитится.
+- Новый `skills/directai-campaign-create` (запись через планы): бриф одним
+  списком (бюджет — только цифрой пользователя) → `phrases_forecast` →
+  структура таблицей → «да» → `campaigns_create` (ЕПК, остановлена) →
+  `adgroups_create` → `keywords_add` → `ads_create` → `extensions_create` →
+  `negatives_set`, read-back каждого шага. Шаблон
+  `references/campaign-template.yaml` (вымышленные данные). Живая проверка:
+  `[TEST DirectAI] Проверка создания` в тестовом кабинете (создана, read-back
+  по всем шагам, осталась OFF, не запускалась).
+- Код сервера не менялся. Хвосты в BACKLOG: `negatives_set` → `unverified`
+  при успехе; `counter_check` 4001/HTTP 400 на боевой кампании.
+
 ## v1.10.2 (2026-10-01) — read-back корректировок с BidModifier=0
 
 - Причина журнала #73: verify `bid_modifiers_set` не запрашивал у API блоки
