@@ -101,6 +101,23 @@ def _fmt_pct(value: object) -> str:
     return num(value) + "%" if value is not None else "—"
 
 
+def _check_dates_not_future(date_from: str, date_to: str) -> str | None:
+    """v1.12.1: Reports API отвечает 4001, если DateFrom в будущем
+    («Дата в параметре DateFrom должна быть не позднее текущей даты»).
+    Отклоняем до API; goals_only статистику не запрашивает — ему можно.
+    """
+    import datetime as _dt
+
+    today = _dt.datetime.now().astimezone().date().isoformat()
+    if date_from > today or date_to > today:
+        return (
+            "Ошибка: даты в будущем (сегодня "
+            f"{today}): Директ отклоняет такой запрос кодом 4001 "
+            "(DateFrom не позднее текущей даты)."
+        )
+    return None
+
+
 @action(
     "counter_check",
     "read",
@@ -123,6 +140,10 @@ async def _check(ctx: Ctx, params: BaseModel) -> str:
         return "Ошибка: укажите campaign_ids."
     if params.date_from > params.date_to:
         return "Ошибка: date_from позже date_to."
+    if not params.goals_only:
+        future_err = _check_dates_not_future(params.date_from, params.date_to)
+        if future_err is not None:
+            return future_err
     mark = "[ПЕСОЧНИЦА] " if ctx.sandbox else ""
     entries = ctx.accounts(params.account)
     if params.account in ("all", "active"):
