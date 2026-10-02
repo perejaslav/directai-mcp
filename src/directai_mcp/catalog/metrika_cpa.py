@@ -104,6 +104,37 @@ async def _direct_campaigns(
     return rows, problems
 
 
+async def _login_campaigns(
+    ctx: Ctx, login: str
+) -> tuple[dict[str, str] | None, list[str]]:
+    """Все кампании логина {id: name} (для классификации несопоставленных).
+
+    None + problems — при ошибке API (классификация грубая, как раньше).
+    """
+    client = ctx.direct()
+    try:
+        try:
+            items = await client.get_all(
+                "campaigns",
+                {
+                    "SelectionCriteria": {},
+                    "FieldNames": ["Id", "Name"],
+                },
+                login,
+                "Campaigns",
+                "v501",
+            )
+        except DirectError as e:
+            return None, [f"⚠ {login}: список кампаний: {e.human_message()}"]
+        out = {}
+        for item in items:
+            if isinstance(item, dict) and item.get("Id") is not None:
+                out[str(item["Id"])] = str(item.get("Name") or "—")
+        return out, []
+    finally:
+        await client.aclose()
+
+
 def _num(value: object) -> float:
     try:
         return float(str(value).replace(" ", "").replace(",", "."))
@@ -256,13 +287,29 @@ async def _cpa(ctx: Ctx, params: BaseModel) -> str:
             "goals": goals,
         }
     foreign = metrika.pop("other", None)
+    login_map, login_problems = await _login_campaigns(ctx, entry.login)
+    errors.extend(login_problems)
     rows: list[dict] = []
     raw: list[dict] = []
     unmatched_direct: list[str] = []
+
+    def _take_by_name(name: str) -> tuple[dict | None, str]:
+        """Запасной ключ: точное совпадение имени (ID не совпал).
+
+        Только при единственном кандидате; иначе — несопоставлено.
+        """
+        hits = [k for k, v in metrika.items() if v["name"] == name]
+        if len(hits) == 1:
+            return metrika.pop(hits[0]), "имя"
+        return None, ""
+
     for cid, direct in sorted(
         direct_rows.items(), key=lambda kv: _num(kv[1]["cost"]), reverse=True
     ):
         meta = metrika.pop(cid, None)
+        match = "ID" if meta else ""
+        if meta is None:
+            meta, match = _take_by_name(direct["name"])
         visits = meta["visits"] if meta else 0.0
         bounce = meta["bounce"] if meta else 0.0
         goals = meta["goals"] if meta else 0.0
@@ -282,11 +329,12 @@ async def _cpa(ctx: Ctx, params: BaseModel) -> str:
             "Clicks": clicks,
             "Visits": int(visits),
             "ClicksToVisits": f"{conv:.1f}%" if conv is not None else "—",
-            "BounceRate": round(bounce, 2),
+            "BounceRate": round(bounce, 2) if visits else "—",
             "Goals": int(goals),
             "CR": cr,
             "CPA": cpa if cpa is not None else "—",
             "Flag": flag or "—",
+            "Связь": match or "—",
         }
         rows.append(row)
         raw.append(dict(row))
@@ -300,15 +348,37 @@ async def _cpa(ctx: Ctx, params: BaseModel) -> str:
         metrika.items(), key=lambda kv: kv[1]["visits"], reverse=True
     )
     if leftovers:
-        extra_lines.append(
-            "Визиты без кампании в логине "
-            f"({entry.login}): "
-            + "; ".join(
-                f"{v['name']} ({k}): {int(v['visits'])} визитов"
-                for k, v in leftovers
+        if login_map is None:
+            extra_lines.append(
+                "Визиты без сопоставления "
+                f"(расхода в {entry.login} нет): "
+                + "; ".join(
+                    f"{v['name']} ({k}): {int(v['visits'])} визитов"
+                    for k, v in leftovers
+                )
+                + "."
             )
-            + "."
-        )
+        else:
+            own = [(k, v) for k, v in leftovers if k in login_map]
+            alien = [(k, v) for k, v in leftovers if k not in login_map]
+            if own:
+                extra_lines.append(
+                    f"Кампании {entry.login} без расхода за период: "
+                    + "; ".join(
+                        f"{v['name']} ({k}): {int(v['visits'])} визитов"
+                        for k, v in own
+                    )
+                    + "."
+                )
+            if alien:
+                extra_lines.append(
+                    "Визиты кампаний других логинов: "
+                    + "; ".join(
+                        f"{v['name']} ({k}): {int(v['visits'])} визитов"
+                        for k, v in alien
+                    )
+                    + "."
+                )
     if foreign:
         extra_lines.append(
             f"Чужие кампании (клики других логинов): "
@@ -345,7 +415,7 @@ async def _cpa(ctx: Ctx, params: BaseModel) -> str:
     context = head
     columns = (
         ["Campaign", "Cost", "Clicks", "Visits", "ClicksToVisits",
-         "BounceRate", "Goals", "CR", "CPA", "Flag"]
+         "BounceRate", "Goals", "CR", "CPA", "Flag", "Связь"]
         if rows else []
     )
     out = finalize(

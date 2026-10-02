@@ -62,7 +62,15 @@ def _params(**kw):
     return ACTIONS["metrika_direct_cpa"].params(**base)
 
 
+def _fake_login(monkeypatch, mapping=None):
+    async def _login(ctx, login):
+        return dict(mapping or {}), []
+
+    monkeypatch.setattr(_cpa, "_login_campaigns", _login)
+
+
 async def test_join_and_math(tmp_path, monkeypatch):
+    _fake_login(monkeypatch)
     _fake_direct(monkeypatch, [
         {"CampaignId": "7", "CampaignName": "K7", "Clicks": "100", "Cost": "900.00"},
         {"CampaignId": "8", "CampaignName": "K8", "Clicks": "200", "Cost": "500.00"},
@@ -87,6 +95,7 @@ async def test_join_and_math(tmp_path, monkeypatch):
 
 
 async def test_divergence_flag(tmp_path, monkeypatch):
+    _fake_login(monkeypatch)
     _fake_direct(monkeypatch, [
         {"CampaignId": "7", "CampaignName": "K7", "Clicks": "100", "Cost": "100.00"},
     ])
@@ -102,6 +111,7 @@ async def test_divergence_flag(tmp_path, monkeypatch):
 
 
 async def test_no_flag_within_threshold(tmp_path, monkeypatch):
+    _fake_login(monkeypatch)
     _fake_direct(monkeypatch, [
         {"CampaignId": "7", "CampaignName": "K7", "Clicks": "100", "Cost": "100.00"},
     ])
@@ -117,6 +127,7 @@ async def test_no_flag_within_threshold(tmp_path, monkeypatch):
 
 
 async def test_unmatched_blocks(tmp_path, monkeypatch):
+    _fake_login(monkeypatch, {"7": "K7"})
     _fake_direct(monkeypatch, [
         {"CampaignId": "7", "CampaignName": "K7", "Clicks": "100", "Cost": "100.00"},
     ])
@@ -132,11 +143,52 @@ async def test_unmatched_blocks(tmp_path, monkeypatch):
     ctx = _ctx(tmp_path)
     out = await ACTIONS["metrika_direct_cpa"].run(ctx, _params())
     assert "Без визитов в Метрике" in out and "K7 (7)" in out
-    assert "без кампании в логине" in out and "Чужая (999)" in out
+    assert "Визиты кампаний других логинов" in out and "Чужая (999)" in out
     assert "Чужие кампании" in out and "33 визитов" in out
 
 
+async def test_name_fallback_match(tmp_path, monkeypatch):
+    """ID не совпал, имя совпало: связь по имени с пометкой."""
+    _fake_login(monkeypatch, {"7": "K7"})
+    _fake_direct(monkeypatch, [
+        {"CampaignId": "7", "CampaignName": "K7", "Clicks": "100", "Cost": "900.00"},
+    ])
+    _fake_metrika(monkeypatch)
+
+    async def _stat(*a, **k):
+        return _metrika_payload([("777", "K7", 90.0, 20.0, 9.0)])
+
+    monkeypatch.setattr(_cpa, "stat_table", _stat)
+    ctx = _ctx(tmp_path)
+    out = await ACTIONS["metrika_direct_cpa"].run(ctx, _params())
+    assert "K7 (7)" in out
+    assert "90.0%" in out
+    assert "Связь" in out and "имя" in out
+    assert "Без визитов в Метрике" not in out
+
+
+async def test_name_fallback_ambiguous(tmp_path, monkeypatch):
+    """Два кандидата с тем же именем — сопоставления нет."""
+    _fake_login(monkeypatch, {"7": "K7"})
+    _fake_direct(monkeypatch, [
+        {"CampaignId": "7", "CampaignName": "K7", "Clicks": "100", "Cost": "900.00"},
+    ])
+    _fake_metrika(monkeypatch)
+
+    async def _stat(*a, **k):
+        return _metrika_payload([
+            ("777", "K7", 50.0, 20.0, 5.0),
+            ("778", "K7", 40.0, 20.0, 4.0),
+        ])
+
+    monkeypatch.setattr(_cpa, "stat_table", _stat)
+    ctx = _ctx(tmp_path)
+    out = await ACTIONS["metrika_direct_cpa"].run(ctx, _params())
+    assert "Без визитов в Метрике" in out and "K7 (7)" in out
+
+
 async def test_zero_goals_cpa_dash(tmp_path, monkeypatch):
+    _fake_login(monkeypatch)
     _fake_direct(monkeypatch, [
         {"CampaignId": "7", "CampaignName": "K7", "Clicks": "100", "Cost": "100.00"},
     ])
@@ -152,6 +204,7 @@ async def test_zero_goals_cpa_dash(tmp_path, monkeypatch):
 
 
 async def test_403_and_empty_and_multi_account(tmp_path, monkeypatch):
+    _fake_login(monkeypatch)
     _fake_direct(monkeypatch, [
         {"CampaignId": "7", "CampaignName": "K7", "Clicks": "1", "Cost": "1.00"},
     ])
