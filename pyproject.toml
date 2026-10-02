@@ -1,6 +1,6 @@
 [project]
 name = "directai-mcp"
-version = "1.10.2"
+version = "1.12.0"
 description = "Local MCP server for Yandex Direct"
 authors = [
     { name = "perejaslav", email = "perejaslav@users.noreply.github.com" }
