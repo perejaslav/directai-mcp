@@ -883,7 +883,8 @@ async def _prepare_target_state(ctx: Ctx, entry: AccountEntry, params: BaseModel
         found = await client.get_all(
             "audiencetargets",
             {"SelectionCriteria": {"Ids": [int(i) for i in params.target_ids]},
-             "FieldNames": ["Id", "AdGroupId", "RetargetingListId", "State"]},
+             "FieldNames": ["Id", "AdGroupId", "CampaignId",
+                            "RetargetingListId", "State"]},
             entry.login, "AudienceTargets")
     finally:
         await client.aclose()
@@ -903,7 +904,13 @@ async def _prepare_target_state(ctx: Ctx, entry: AccountEntry, params: BaseModel
         lines = [f"Привязка {i}: {have[int(i)].get('State')} → {expected}"
                  for i in params.target_ids]
     return {
-        "before": {str(i): have[int(i)].get("State") for i in params.target_ids},
+        "before": {
+            **{str(i): have[int(i)].get("State") for i in params.target_ids},
+            # v1.15.1: привязка к кампании в журнале.
+            "campaign_ids": sorted({
+                int(have[int(i)]["CampaignId"]) for i in params.target_ids
+                if have[int(i)].get("CampaignId") is not None}),
+        },
         "requests": requests,
         "preview": "Будет выполнено:\n" + "\n".join(f"- {line}" for line in lines),
         "warnings": [],

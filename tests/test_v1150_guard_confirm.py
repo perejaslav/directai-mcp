@@ -11,7 +11,7 @@ import directai_mcp.catalog.campaigns as _c  # noqa: F401 (реестр)
 import directai_mcp.catalog.retargeting as _rt  # noqa: F401 (реестр)
 from directai_mcp.catalog.registry import Ctx
 from directai_mcp.config import AccountEntry, ConfigError, Settings, load_settings
-from directai_mcp.safety.guard import BUDGET_BLOCK, DANGER_NOTICE
+from directai_mcp.safety.guard import BUDGET_BLOCK, CONFIRM_SUFFIX, DANGER_NOTICE
 from directai_mcp.server import PLANS, do_apply_write, do_plan_write
 
 V5 = "https://api.direct.yandex.com/json/v5"
@@ -64,7 +64,9 @@ async def test_budget_is_danger_and_needs_owner_confirmed(respx_mock, tmp_path):
         "account": "m", "campaign_ids": [COMBAT_ID], "daily_budget": 500.0})
     pid = _pid(out)
     assert DANGER_NOTICE in out
-    assert BUDGET_BLOCK in out
+    # v1.15.1: в confirm причина — «нужно подтверждение», не «запрещено».
+    assert f"изменение бюджета или стратегии — {CONFIRM_SUFFIX}" in out
+    assert "запрещен" not in out
     assert "дневной бюджет: 300 ₽ → 500 ₽" in out
     body = PLANS.peek(pid).requests[0][2]["Campaigns"][0]
     assert body["DailyBudget"] == {"Amount": 500_000_000, "Mode": "STANDARD"}
@@ -85,7 +87,7 @@ async def test_campaign_suspend_combat_is_danger(respx_mock, tmp_path):
     out = await do_plan_write(_ctx(tmp_path), "campaigns_state", {
         "account": "m", "campaign_ids": [COMBAT_ID], "operation": "suspend"})
     _pid(out)
-    assert "вне тестового префикса" in out
+    assert f"запись в боевую кампанию {COMBAT_ID}" in out
     assert DANGER_NOTICE in out
 
 
@@ -95,7 +97,7 @@ async def test_rename_is_danger_and_body_has_name(respx_mock, tmp_path):
     out = await do_plan_write(_ctx(tmp_path), "campaigns_update", {
         "account": "m", "campaign_ids": [COMBAT_ID], "name": "Новое имя"})
     pid = _pid(out)
-    assert "переименование" in out
+    assert f"переименование кампании — {CONFIRM_SUFFIX}" in out
     assert PLANS.peek(pid).requests[0][2]["Campaigns"][0]["Name"] == "Новое имя"
 
 
@@ -109,7 +111,7 @@ async def test_moderate_is_danger(respx_mock, tmp_path):
     out = await do_plan_write(_ctx(tmp_path), "ads_state", {
         "account": "m", "ad_ids": [7], "operation": "moderate"})
     _pid(out)
-    assert "модерация" in out
+    assert "отправка на модерацию" in out
     assert DANGER_NOTICE in out
 
 

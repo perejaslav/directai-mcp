@@ -50,6 +50,15 @@ CASES = [
     ("keywords_add", {"adgroup_id": 9}, {"campaign_id": 5, "adgroup_id": 9}, None, [5]),
     ("keywords_update", {"keywords": [{"id": 4}]}, None, None, []),
     ("keywords_state", {"keyword_ids": [4]}, None, None, []),
+    # v1.15.1: prepare кладёт кампании объектов в before["campaign_ids"].
+    ("ads_state", {"ad_ids": [3], "operation": "suspend"},
+     {"3": "ON", "campaign_ids": [5]}, None, [5]),
+    ("keywords_update", {"items": [{"id": 4}]},
+     {"4": "к", "campaign_ids": [5]}, None, [5]),
+    ("keywords_state", {"keyword_ids": [4]},
+     {"4": "ON", "campaign_ids": [5]}, None, [5]),
+    ("audience_target_state", {"target_ids": [2]},
+     {"2": "ON", "campaign_ids": [5]}, None, [5]),
     (
         "negatives_set",
         {"campaign_ids": [7], "negatives": ["-x"]},

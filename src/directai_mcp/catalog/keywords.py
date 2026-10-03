@@ -285,7 +285,7 @@ async def _prepare_keyword_state(
             "keywords",
             {
                 "SelectionCriteria": {"Ids": params.keyword_ids},
-                "FieldNames": ["Id", "Keyword", "State"],
+                "FieldNames": ["Id", "Keyword", "State", "CampaignId"],
             },
             entry.login,
             "Keywords",
@@ -297,11 +297,15 @@ async def _prepare_keyword_state(
     if missing:
         raise ValueError(f"фразы не найдены: {missing}.")
     expected = EXPECTED_KEYWORD_STATE[params.operation]
-    before = {kid: found[kid].get("State") for kid in params.keyword_ids}
+    before: dict = {kid: found[kid].get("State") for kid in params.keyword_ids}
     lines = [
         f"{found[kid].get('Keyword')} ({kid}): {before[kid]} → {expected}"
         for kid in params.keyword_ids
     ]
+    # v1.15.1: привязка к кампании в журнале.
+    before["campaign_ids"] = sorted({
+        int(found[kid]["CampaignId"]) for kid in params.keyword_ids
+        if found[kid].get("CampaignId") is not None})
     return {
         "before": before,
         "requests": [
@@ -762,7 +766,8 @@ async def _prepare_keywords_update(
     try:
         found = await client.get_all(
             "keywords",
-            {"SelectionCriteria": {"Ids": ids}, "FieldNames": ["Id", "Keyword"]},
+            {"SelectionCriteria": {"Ids": ids},
+             "FieldNames": ["Id", "Keyword", "CampaignId"]},
             entry.login,
             "Keywords",
         )
@@ -777,8 +782,13 @@ async def _prepare_keywords_update(
         if item.keyword is None:
             raise ValueError(f"фраза {item.id}: нечего менять (keyword пуст).")
         lines.append(f"{current[item.id]} ({item.id}) → {item.keyword}")
+    # v1.15.1: привязка к кампании в журнале.
+    before: dict = dict(current)
+    before["campaign_ids"] = sorted({
+        int(i["CampaignId"]) for i in found
+        if i.get("Id") is not None and i.get("CampaignId") is not None})
     return {
-        "before": current,
+        "before": before,
         "requests": [
             (
                 "keywords",

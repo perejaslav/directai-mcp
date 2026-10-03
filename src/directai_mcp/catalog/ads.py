@@ -1861,7 +1861,7 @@ async def _prepare_ads_state(ctx: Ctx, entry: AccountEntry, params: BaseModel) -
             "ads",
             {
                 "SelectionCriteria": {"Ids": params.ad_ids},
-                "FieldNames": ["Id", "State", "Status"],
+                "FieldNames": ["Id", "State", "Status", "CampaignId"],
             },
             entry.login,
             "Ads",
@@ -1873,8 +1873,12 @@ async def _prepare_ads_state(ctx: Ctx, entry: AccountEntry, params: BaseModel) -
     if missing:
         raise ValueError(f"объявления не найдены: {missing}.")
     expected = _ADS_EXPECTED[params.operation]
-    before = {aid: found[aid].get("State") for aid in params.ad_ids}
+    before: dict = {aid: found[aid].get("State") for aid in params.ad_ids}
     lines = [f"{aid}: {before[aid]} → {expected}" for aid in params.ad_ids]
+    # v1.15.1: привязка к кампании в журнале.
+    before["campaign_ids"] = sorted({
+        int(found[aid]["CampaignId"]) for aid in params.ad_ids
+        if found[aid].get("CampaignId") is not None})
     return {
         "before": before,
         "requests": [

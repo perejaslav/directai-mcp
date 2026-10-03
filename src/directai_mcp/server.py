@@ -469,8 +469,7 @@ async def _plan_write(ctx: Ctx, name: str, params: dict) -> str:
         lines += ["", "Предупреждения (нужен acknowledge_warnings=true):"]
         lines += [f"- {w}" for w in plan.warnings]
     if plan.danger:
-        lines += ["", DANGER_NOTICE,
-                  "Причины (в режиме block это был бы запрет):"]
+        lines += ["", DANGER_NOTICE, "Причины:"]
         lines += [f"- {d}" for d in plan.danger]
     mark = "[ПЕСОЧНИЦА] " if ctx.sandbox else ""
     if mark:
