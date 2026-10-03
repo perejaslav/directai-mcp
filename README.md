@@ -195,6 +195,13 @@ Credential Manager (`directai-mcp`) или переменная `DIRECTAI_TOKEN`
 Яндекс.Вебмастера можно хранить отдельный токен: `directai-mcp set-token
 --webmaster` (Credential Manager `directai-mcp-webmaster` или переменная
 `DIRECTAI_WEBMASTER_TOKEN`); без него используется основной токен.
+Для Wordstat API Yandex Cloud используется отдельный API-ключ: выполните
+`directai-mcp set-token --wordstat`, введите `folderId` каталога AI Studio,
+затем ключ в скрытом поле. Ключ хранится в Credential Manager
+(`directai-mcp-wordstat` или `DIRECTAI_WORDSTAT_API_KEY`), а `folderId` — в
+`[wordstat] folder_id` в `accounts.toml`. Секретный ключ в этот файл не
+записывается. Действия Wordstat — только чтение и не используют OAuth-токен
+Директа.
 Запись в Яндекс Аудитории выключена по умолчанию
 (`[audience] write_enabled=false`); включается только явным
 `write_enabled = true`, путь тот же: `plan_write` → ваше согласие →
@@ -205,7 +212,7 @@ Credential Manager (`directai-mcp`) или переменная `DIRECTAI_TOKEN`
 Порядок работы ИИ: `search_actions` → `describe_action` → `run_read`
 (чтение) или `plan_write` → показать вам → `apply_write` (запись).
 
-Чтение (53):
+Чтение (57):
 
 | Действие | Что делает |
 |---|---|
@@ -249,6 +256,10 @@ Credential Manager (`directai-mcp`) или переменная `DIRECTAI_TOKEN`
 | `turbopages_get` | Турбо-страницы: метаданные без содержимого блоков |
 | `keyword_bids_forecast` | Прогноз ставок по существующим фразам: объём трафика → ставка → цена (только чтение) |
 | `phrases_forecast` | Прогноз показов/кликов/цен для новых фраз до добавления (Live v4, только чтение) |
+| `wordstat_top` | Wordstat: популярные и связанные запросы за последние 30 дней |
+| `wordstat_dynamics` | Wordstat: динамика частотности по дням, неделям или месяцам |
+| `wordstat_regions` | Wordstat: распределение частотности по регионам за последние 30 дней |
+| `wordstat_regions_tree` | Wordstat: справочник регионов и иерархия кодов |
 | `retargeting_lists_list` | Условия ретаргетинга кабинета: правила человеческим языком, где используются |
 | `audience_targets_list` | Привязки аудиторий к группам: условие, состояние, ставка/приоритет |
 | `campaign_journal` | Журнал кампании: история правок, результаты по периодам, заметки (пишет md-файл) |
@@ -574,6 +585,7 @@ if ($LASTEXITCODE -ne 0) {
 | План с предупреждениями не применяется | Это защита: повторите `apply_write` с `acknowledge_warnings=true` только после вашего согласия |
 | `token missing for login 'X'` | Токен сохранён под другим логином: выполните `directai-mcp set-token --login <[auth] login>` с логином из `accounts.toml` |
 | Вебмастер: «нет права» / «токен не принят» | Нужен отдельный токен: `directai-mcp set-token --webmaster` (приложение «для доступа к API» с правом `webmaster:hostinfo`) |
+| Wordstat: «API key missing» или «folderId не настроен» | Выполните `directai-mcp set-token --wordstat`; API-ключ вводится скрыто, `folderId` хранится в `[wordstat]` |
 | `Ignoring malformed tool` | Битая копия/рецепт, не повод сносить рабочий инструмент: закройте все окна харнесов и переустановите с `--force` (бэкап — вне tool dir). `uninstall` — только для заведомо мусорных записей |
 | `os error 32` при переустановке | exe занят MCP-клиентами: покажите владельцев (`Get-CimInstance Win32_Process -Filter 'Name="directai-mcp.exe"'`, поле `ParentProcessId`), чужие процессы не убивайте. Шлюз Hermes (`python.exe … hermes_cli.main … gateway run`) работает в фоне и держит exe даже при закрытых окнах — человек останавливает его сам (см. §7: остановка сервера и шлюза), после установки запускает Hermes заново. Висящие `opencode serve` — тоже владельцы: их закрывают штатно, не `kill` |
 | Как быстро проверить сервер | `directai-mcp --version` → `check` → `probe` (две строки OK, `stats_summary` найден; баллы не тратятся). Сырые stdio-пробы вручную не делать |

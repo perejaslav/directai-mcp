@@ -1,5 +1,22 @@
 # CHANGELOG
 
+## v1.14.0 (2026-10-03) — Wordstat API
+
+- Четыре действия чтения Yandex Cloud Search API v2: `wordstat_top`,
+  `wordstat_dynamics`, `wordstat_regions`, `wordstat_regions_tree`.
+  Отдельный provider `wordstat` не требует OAuth-токена Директа.
+- Настройка: `set-token --wordstat [--folder-id]`; API-ключ вводится скрыто
+  и хранится в Credential Manager `directai-mcp-wordstat`, folderId —
+  в `[wordstat] folder_id` пользовательского `accounts.toml`.
+- Транспорт: `httpx.AsyncHTTPTransport(local_address="0.0.0.0")` для
+  устранения наблюдавшейся живой ошибки ConnectError на Windows.
+- Платные запросы Wordstat стоят примерно 0,02 ₽; лишние запросы не делать.
+  В рамках проверки этого коммита живые запросы не выполнялись.
+- Безопасность: секреты Ctx скрыты из repr — OAuth-токен Директа и
+  API-ключ Wordstat; добавлен тест с фиктивными значениями обоих секретов.
+- Проверки: профильные pytest — 13 passed; полный pytest — 675 passed,
+  0 failed; `ruff check src tests` — All checks passed.
+
 ## v1.13.1 (2026-10-02) — порядок в репозитории (только документация)
 
 - Git: v1.13.0 закоммичена и запушена; `check_blocklist.py` чист по всем

@@ -34,6 +34,7 @@ from directai_mcp.catalog import negatives as negatives_mod
 from directai_mcp.catalog import retargeting as retargeting_mod
 from directai_mcp.catalog import stats as stats_mod
 from directai_mcp.catalog import webmaster as webmaster_mod
+from directai_mcp.catalog import wordstat as wordstat_mod
 
 # Referenced so ruff --fix never drops these registration imports.
 _ACTION_MODULES = (
@@ -60,6 +61,7 @@ _ACTION_MODULES = (
     retargeting_mod,
     stats_mod,
     webmaster_mod,
+    wordstat_mod,
 )
 from directai_mcp import __version__
 from directai_mcp.catalog.registry import ACTIONS, Ctx, search
@@ -69,6 +71,7 @@ from directai_mcp.config import (
     TokenMissingError,
     data_dir,
     get_token,
+    get_wordstat_api_key,
     load_settings,
 )
 from directai_mcp.log import setup_logging
@@ -113,6 +116,8 @@ INSTRUCTIONS = (
     "не предлагать его для выяснения причин ручных изменений в кабинете. "
     "Пробные и исследовательские записи сверх задачи пользователя запрещены; "
     "лимиты — из документации или из ошибки самой запрошенной операции. "
+    "Wordstat работает через Yandex Cloud Search API v2: его действия "
+    "используют отдельный API-ключ и folderId из секции [wordstat]. "
     "Политика записи: бюджеты и смена стратегии запрещены везде "
     "(«Изменение бюджета запрещено политикой»); в боевых кампаниях разрешены "
     "фразы add/пауза, объявления create/update, ссылки/уточнения, регионы "
@@ -190,10 +195,25 @@ def build_server(sandbox: bool = False) -> FastMCP:
     # явно, чтобы initialize отдавал версию CLI (__version__).
     mcp._mcp_server.version = __version__
 
-    def _ctx() -> Ctx:
+    def _ctx(*, require_direct: bool = True) -> Ctx:
         settings = load_settings()
-        token = get_token(settings.auth_login)
-        return Ctx(settings=settings, token=token, sandbox=sandbox, data_dir=data_dir())
+        token = get_token(settings.auth_login) if require_direct else ""
+        wordstat_api_key = ""
+        if not require_direct:
+            wordstat_api_key = get_wordstat_api_key(settings.auth_login)
+            if not settings.wordstat_folder_id:
+                raise ConfigError(
+                    "Wordstat folderId не настроен. "
+                    "Запустите `directai-mcp set-token --wordstat`."
+                )
+        return Ctx(
+            settings=settings,
+            token=token,
+            wordstat_api_key=wordstat_api_key,
+            wordstat_folder_id=settings.wordstat_folder_id,
+            sandbox=sandbox,
+            data_dir=data_dir(),
+        )
 
     @mcp.tool()
     def list_accounts() -> str:
@@ -245,7 +265,30 @@ def build_server(sandbox: bool = False) -> FastMCP:
             valid = ", ".join(sorted(ACTIONS))
             return f"Ошибка: неизвестное действие '{name}'. Доступны: {valid}."
         schema = act.params.model_json_schema()
-        example: dict[str, Any] = {"account": "all", "period": "LAST_7_DAYS"}
+        if act.provider == "wordstat":
+            examples: dict[str, dict[str, Any]] = {
+                "wordstat_top": {"phrase": "краска для бетона", "num_phrases": 20},
+                "wordstat_dynamics": {
+                    "phrase": "краска для бетона",
+                    "period": "PERIOD_WEEKLY",
+                    "from_date": "2025-12-29T00:00:00Z",
+                    "to_date": "2026-01-25T00:00:00Z",
+                },
+                "wordstat_regions": {"phrase": "краска для бетона"},
+                "wordstat_regions_tree": {},
+            }
+            example = examples.get(act.name, {})
+            constraints = (
+                "Wordstat: запрос идёт через Yandex Cloud Search API v2; "
+                "API-ключ хранится в Credential Manager, folderId — в [wordstat]. "
+                "Для недельной и месячной динамики поддерживается только оператор '+'."
+            )
+        else:
+            example = {"account": "all", "period": "LAST_7_DAYS"}
+            constraints = (
+                "Ограничения: чтение идёт через Reports API c НДС; "
+                "запись подключается на шаге 4."
+            )
         lines = [
             f"Действие {act.name} [{act.mode}]: {act.summary}",
             "",
@@ -253,10 +296,7 @@ def build_server(sandbox: bool = False) -> FastMCP:
             str(schema),
             "",
             f"Пример: run_read({{'name': '{act.name}', 'params': {example}}})",
-            (
-                "Ограничения: чтение идёт через Reports API c НДС; "
-                "запись подключается на шаге 4."
-            ),
+            constraints,
         ]
         return "\n".join(lines)
 
@@ -270,7 +310,7 @@ def build_server(sandbox: bool = False) -> FastMCP:
         if act.mode != "read" or act.run is None:
             return f"Ошибка: действие '{name}' недоступно для чтения."
         try:
-            ctx = _ctx()
+            ctx = _ctx(require_direct=act.provider == "direct")
         except (ConfigError, TokenMissingError) as e:
             return f"Ошибка конфигурации: {e}"
         try:

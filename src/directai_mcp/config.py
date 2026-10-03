@@ -19,6 +19,10 @@ WEBMASTER_TOKEN_ENV_VAR = "DIRECTAI_WEBMASTER_TOKEN"
 # лимит 3 группы разрешений, основной токен перевыпускать нельзя.
 KEYRING_SERVICE_AUDIENCE = "directai-mcp-audience"
 AUDIENCE_TOKEN_ENV_VAR = "DIRECTAI_AUDIENCE_TOKEN"
+# Yandex Cloud Wordstat API key (AI Studio), separate from the OAuth token
+# used by Yandex Direct.  The key itself is stored in the OS keyring.
+KEYRING_SERVICE_WORDSTAT = "directai-mcp-wordstat"
+WORDSTAT_API_KEY_ENV_VAR = "DIRECTAI_WORDSTAT_API_KEY"
 DEFAULT_AUTH_LOGIN = "agency-login"
 
 # Шаг 1.1-2: кеш обнаруженных кабинетов и его свежесть.
@@ -73,6 +77,9 @@ class Settings:
     # v1.10.0 (Б4): ретаргетинг — запись выключена по умолчанию.
     # Включение — только явным [retargeting] write_enabled=true.
     retargeting_write_enabled: bool = False
+    # Yandex Cloud Wordstat: folder ID is configuration, the API key is in
+    # the OS keyring (or DIRECTAI_WORDSTAT_API_KEY for an explicit process).
+    wordstat_folder_id: str | None = None
     # v1.6.0 (B3): основная цель. Ключ — алиас кабинета, значение — id цели строкой.
     primary_goal_by_account: dict[str, str] = field(default_factory=dict)
     # v1.6.0 (B3): переопределение по кампании. Ключ — (алиас, campaign_id).
@@ -192,6 +199,14 @@ def load_settings(path: Path | None = None) -> Settings:
         raise ConfigError(f"invalid [retargeting] section in {cfg_path}")
     retargeting_write_enabled = bool(retargeting_section.get("write_enabled", False))
 
+    wordstat_section = data.get("wordstat", {}) or {}
+    if not isinstance(wordstat_section, dict):
+        raise ConfigError(f"invalid [wordstat] section in {cfg_path}")
+    raw_wordstat_folder = wordstat_section.get("folder_id")
+    wordstat_folder_id = (
+        str(raw_wordstat_folder).strip() if raw_wordstat_folder is not None else ""
+    ) or None
+
     # v1.6.0 (B3): основная цель. Уровень кабинета:
     # [aliases.<имя>] primary_conversion_goal_id (также [accounts.<имя>]
     # legacy). Переопределение по кампании:
@@ -246,6 +261,7 @@ def load_settings(path: Path | None = None) -> Settings:
         reports_dir=reports_dir,
         audience_write_enabled=audience_write_enabled,
         retargeting_write_enabled=retargeting_write_enabled,
+        wordstat_folder_id=wordstat_folder_id,
         units_warn_pct=units_warn_pct,
         counter_visits_warn_pct=counter_visits_warn_pct,
         primary_goal_by_account=primary_by_account,
@@ -577,3 +593,23 @@ def get_audience_token(auth_login: str) -> str | None:
     import keyring
 
     return keyring.get_password(KEYRING_SERVICE_AUDIENCE, auth_login)
+
+
+def get_wordstat_api_key(auth_login: str) -> str:
+    """Read the Yandex Cloud Wordstat API key from env or OS keyring.
+
+    Unlike the Direct OAuth token, this credential is owned by Yandex Cloud
+    AI Studio and is deliberately kept under a separate service name.
+    """
+    env_key = os.environ.get(WORDSTAT_API_KEY_ENV_VAR)
+    if env_key:
+        return env_key
+    import keyring
+
+    api_key = keyring.get_password(KEYRING_SERVICE_WORDSTAT, auth_login)
+    if api_key:
+        return api_key
+    raise TokenMissingError(
+        "Wordstat API key missing. Run `directai-mcp set-token --wordstat` "
+        f"or set {WORDSTAT_API_KEY_ENV_VAR}."
+    )

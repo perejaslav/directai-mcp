@@ -80,6 +80,10 @@ EXPECTED = frozenset(
         "retargeting_list_delete",
         "audience_target_add",
         "audience_target_state",
+        "wordstat_top",
+        "wordstat_dynamics",
+        "wordstat_regions",
+        "wordstat_regions_tree",
     }
 )
 
@@ -89,4 +93,4 @@ def test_registry_has_all_actions():
 
 
 def test_registration_imports_referenced():
-    assert len(server_mod._ACTION_MODULES) == 23
+    assert len(server_mod._ACTION_MODULES) == 24

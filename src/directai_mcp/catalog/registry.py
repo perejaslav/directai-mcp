@@ -15,6 +15,7 @@ from directai_mcp.api.reports import ReportsClient
 from directai_mcp.config import AccountEntry, Settings, resolve_account
 
 Mode = Literal["read", "write"]
+Provider = Literal["direct", "wordstat"]
 
 _TOKEN_RE = re.compile(r"[a-zа-яё0-9]+", re.IGNORECASE)
 
@@ -31,12 +32,17 @@ class Ctx:
     """Per-call context for actions."""
 
     settings: Settings
-    token: str
+    token: str = field(repr=False)
     sandbox: bool = False
     data_dir: Path | None = None
     notes: list[str] = field(default_factory=list)
     net: NetStats = field(default_factory=NetStats)
     _clients: list = field(default_factory=list, repr=False)
+    # Wordstat uses a separate Yandex Cloud API key and folder ID.  Direct
+    # actions continue to use ``token`` unchanged.  These fields come after
+    # the original positional fields for compatibility with existing callers.
+    wordstat_api_key: str = field(default="", repr=False)
+    wordstat_folder_id: str | None = None
 
     def accounts(self, value: str) -> list[AccountEntry]:
         from directai_mcp.config import _home_of, _managed_cache, cache_age_days
@@ -72,6 +78,15 @@ class Ctx:
         self._clients.append(client)
         return client
 
+    def wordstat(self):
+        from directai_mcp.api.wordstat import WordstatClient
+
+        if not self.wordstat_api_key or not self.wordstat_folder_id:
+            raise ValueError("Wordstat API не настроен: нужен API-ключ и folderId")
+        return WordstatClient(
+            api_key=self.wordstat_api_key, folder_id=self.wordstat_folder_id
+        )
+
     def collect_net(self) -> NetStats:
         """Шаг 1.1-5: слить счётчики созданных клиентов в ctx.net (1 раз)."""
         for client in self._clients:
@@ -91,6 +106,7 @@ class Action:
     prepare: Any = None
     apply: Any = None
     verify: Any = None
+    provider: Provider = "direct"
 
 
 ACTIONS: dict[str, Action] = {}
@@ -102,6 +118,8 @@ def action(
     summary: str,
     keywords: tuple[str, ...],
     params: type[BaseModel],
+    *,
+    provider: Provider = "direct",
 ):
     """Register a catalog read action."""
 
@@ -113,6 +131,7 @@ def action(
             keywords=keywords,
             params=params,
             run=run,
+            provider=provider,
         )
         ACTIONS[name] = act
         return act

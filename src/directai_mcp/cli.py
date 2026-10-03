@@ -5,8 +5,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import getpass
+import json
 import logging
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -18,6 +20,7 @@ from directai_mcp.config import (
     KEYRING_SERVICE,
     KEYRING_SERVICE_AUDIENCE,
     KEYRING_SERVICE_WEBMASTER,
+    KEYRING_SERVICE_WORDSTAT,
     ConfigError,
     TokenMissingError,
     data_dir,
@@ -82,13 +85,18 @@ def cmd_set_token(
     login: str | None = None,
     webmaster: bool = False,
     audience: bool = False,
+    wordstat: bool = False,
+    folder_id: str | None = None,
 ) -> int:
-    """Masked token input, save to Windows Credential Manager."""
+    """Masked credential input, save to Windows Credential Manager."""
     target = data_dir()
     target.mkdir(parents=True, exist_ok=True)
     setup_logging(target)
 
-    if audience:
+    if wordstat:
+        service = KEYRING_SERVICE_WORDSTAT
+        label = "Wordstat"
+    elif audience:
         service = KEYRING_SERVICE_AUDIENCE
         label = "Аудитории"
     elif webmaster:
@@ -109,7 +117,17 @@ def cmd_set_token(
             print(f"no accounts.toml, using login '{resolved_login}'")
             print(f"hint: run `directai-mcp init` first (data dir: {target})")
 
-    token = getpass.getpass(f"token for {resolved_login} ({label}): ").strip()
+    folder = ""
+    if wordstat:
+        folder = (folder_id or "").strip()
+        if not folder:
+            folder = getpass.getpass("folderId (идентификатор каталога): ").strip()
+        if not folder:
+            print("empty folderId, not saved", file=sys.stderr)
+            return 1
+
+    prompt = "API-ключ" if wordstat else "token"
+    token = getpass.getpass(f"{prompt} for {resolved_login} ({label}): ").strip()
     if not token:
         print("empty token, not saved", file=sys.stderr)
         return 1
@@ -117,7 +135,60 @@ def cmd_set_token(
 
     keyring.set_password(service, resolved_login, token)
     print(f"saved to Credential Manager: {service}/{resolved_login}")
+    if wordstat:
+        try:
+            path = _save_wordstat_folder_id(folder, target / "accounts.toml")
+        except OSError as exc:
+            print(f"cannot save Wordstat folderId: {exc}", file=sys.stderr)
+            return 1
+        print(f"saved Wordstat folderId to config: {path}")
     return 0
+
+
+def _save_wordstat_folder_id(folder_id: str, path: Path) -> Path:
+    """Persist the non-secret Wordstat folder ID without rewriting the TOML.
+
+    Existing comments and unrelated settings are retained.  This helper is
+    intentionally small because ``accounts.toml`` is user-owned configuration,
+    while the API key itself stays in Credential Manager.
+    """
+    value = json.dumps(folder_id.strip(), ensure_ascii=False)
+    newline = "\r\n"
+    if path.exists():
+        with path.open("r", encoding="utf-8", newline="") as handle:
+            text = handle.read()
+        newline = "\r\n" if "\r\n" in text else "\n"
+    else:
+        text = ""
+    lines = text.splitlines(keepends=True)
+    section_start: int | None = None
+    section_end: int | None = None
+    for index, line in enumerate(lines):
+        heading = re.match(r"^\s*\[([^\]]+)\]\s*(?:#.*)?(?:\r?\n)?$", line)
+        if heading:
+            if section_start is not None:
+                section_end = index
+                break
+            if heading.group(1).strip() == "wordstat":
+                section_start = index
+    if section_start is not None and section_end is None:
+        section_end = len(lines)
+    assignment = f"folder_id = {value}{newline}"
+    if section_start is not None and section_end is not None:
+        for index in range(section_start + 1, section_end):
+            if re.match(r"^\s*folder_id\s*=", lines[index]):
+                lines[index] = assignment
+                break
+        else:
+            lines.insert(section_end, assignment)
+    else:
+        if lines and not lines[-1].endswith(("\n", "\r")):
+            lines[-1] += newline
+        lines.extend([f"{newline}[wordstat]{newline}", assignment])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        handle.write("".join(lines))
+    return path
 
 
 async def _check_one(login: str, role: str, token: str, sandbox: bool) -> str:
@@ -325,15 +396,26 @@ def build_parser() -> argparse.ArgumentParser:
 
     st = sub.add_parser("set-token", help="save token to Credential Manager")
     st.add_argument("--login", default=None)
-    st.add_argument(
+    cred = st.add_mutually_exclusive_group()
+    cred.add_argument(
         "--webmaster",
         action="store_true",
         help="сохранить отдельный токен Вебмастера (из приложения «для доступа к API»)",
     )
-    st.add_argument(
+    cred.add_argument(
         "--audience",
         action="store_true",
         help="сохранить отдельный токен Аудиторий (экспериментально)",
+    )
+    cred.add_argument(
+        "--wordstat",
+        action="store_true",
+        help="сохранить API-ключ Yandex Cloud Wordstat и спросить folderId",
+    )
+    st.add_argument(
+        "--folder-id",
+        default=None,
+        help="folderId для Wordstat (если не указан, будет запрошен скрыто)",
     )
 
     sub.add_parser("check", help="Clients.get + campaign count per account")
@@ -364,8 +446,16 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "init":
         raise SystemExit(cmd_init())
     if args.command == "set-token":
+        if args.folder_id and not args.wordstat:
+            raise SystemExit("--folder-id доступен только вместе с --wordstat")
         raise SystemExit(
-            cmd_set_token(args.login, webmaster=args.webmaster, audience=args.audience)
+            cmd_set_token(
+                args.login,
+                webmaster=args.webmaster,
+                audience=args.audience,
+                wordstat=args.wordstat,
+                folder_id=args.folder_id,
+            )
         )
     if args.command == "check":
         raise SystemExit(cmd_check(sandbox=args.sandbox))
