@@ -9,11 +9,76 @@ import pytest
 import directai_mcp.catalog.wordstat as ws
 import directai_mcp.config as cfg
 import directai_mcp.server as server_mod
+from directai_mcp.api.wordstat import _scrub, post
 from directai_mcp.catalog.registry import ACTIONS, Ctx, search
 from directai_mcp.config import AccountEntry, Settings
 
 BASE = "https://searchapi.api.cloud.yandex.net/v2/wordstat"
 SECRET = "wordstat-secret-test"
+
+
+async def test_wordstat_success_scrubs_nested_secret_without_truncation(respx_mock):
+    prefix, suffix = "a" * 600, "z" * 600
+    payload = {"nested": [{"text": prefix + SECRET + suffix}]}
+    respx_mock.post(f"{BASE}/topRequests").mock(
+        return_value=httpx.Response(200, json=payload)
+    )
+    result = await post(SECRET, "topRequests")
+    assert result == {"nested": [{"text": prefix + "[REDACTED]" + suffix}]}
+    assert SECRET not in json.dumps(result)
+
+
+async def test_wordstat_success_scrubs_dict_keys(respx_mock):
+    payload = {"nested": [{f"before-{SECRET}-after": "value"}]}
+    respx_mock.post(f"{BASE}/topRequests").mock(
+        return_value=httpx.Response(200, json=payload)
+    )
+    result = await post(SECRET, "topRequests")
+    assert result == {"nested": [{"before-[REDACTED]-after": "value"}]}
+
+
+async def test_wordstat_success_preserves_payload_without_secret(respx_mock):
+    payload = {"nested": [{"text": "x" * 1200, "count": 42}], "flag": True, "empty": None}
+    respx_mock.post(f"{BASE}/topRequests").mock(
+        return_value=httpx.Response(200, json=payload)
+    )
+    assert await post(SECRET, "topRequests") == payload
+
+
+def test_wordstat_scrub_preserves_tuple_and_scalar_types():
+    result = _scrub((SECRET, [1, 2.5, True, None]), SECRET)
+    assert isinstance(result, tuple)
+    assert result == ("[REDACTED]", [1, 2.5, True, None])
+    assert [type(item) for item in result[1]] == [int, float, bool, type(None)]
+
+
+def test_wordstat_scrub_empty_secret_returns_original():
+    payload = {SECRET: [SECRET, (SECRET,)]}
+    assert _scrub(payload, "") is payload
+
+
+async def test_wordstat_top_dump_scrubs_echoed_secret(respx_mock, tmp_path):
+    payload = {
+        "results": [{"phrase": "paint", "count": "12"}],
+        "nested": [{f"field-{SECRET}": "a" * 600 + SECRET + "z" * 600}],
+    }
+    respx_mock.post(f"{BASE}/topRequests").mock(
+        return_value=httpx.Response(200, json=payload)
+    )
+    dump_dir = tmp_path / "dump"
+    await ACTIONS["wordstat_top"].run(
+        _ctx(tmp_path),
+        ws.WordstatTopParams(phrase="paint", output="file", dump_dir=str(dump_dir)),
+    )
+    files = list(dump_dir.glob("[0-9]*_wordstat_top.json"))
+    assert len(files) == 1
+    content = files[0].read_text(encoding="utf-8")
+    assert SECRET not in content
+    raw = json.loads(content)["sections"]["wordstat_top"]["raw_items"]
+    assert raw == [{
+        "results": payload["results"],
+        "nested": [{"field-[REDACTED]": "a" * 600 + "[REDACTED]" + "z" * 600}],
+    }]
 
 
 def _ctx(tmp_path) -> Ctx:

@@ -42,6 +42,21 @@ def _redact(text: str, secret: str) -> str:
     return text.replace(secret, "[REDACTED]")[:500]
 
 
+def _scrub(value: Any, secret: str) -> Any:
+    """Remove a credential from response strings without truncating data."""
+    if not secret:
+        return value
+    if isinstance(value, str):
+        return value.replace(secret, "[REDACTED]")
+    if isinstance(value, dict):
+        return {_scrub(key, secret): _scrub(item, secret) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_scrub(item, secret) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_scrub(item, secret) for item in value)
+    return value
+
+
 async def post(
     api_key: str,
     path: str,
@@ -77,4 +92,4 @@ async def post(
         raise WordstatError(f"bad json: {exc}") from None
     if not isinstance(payload, dict):
         raise WordstatError("неожиданный ответ API: ожидался JSON-объект")
-    return payload
+    return _scrub(payload, api_key)
