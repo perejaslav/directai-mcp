@@ -333,13 +333,21 @@ def build_server(sandbox: bool = False) -> FastMCP:
         return await do_plan_write(ctx, name, params or {})
 
     @mcp.tool()
-    async def apply_write(plan_id: str, acknowledge_warnings: bool = False) -> str:
-        """Применить план. Только после согласия пользователя."""
+    async def apply_write(
+        plan_id: str,
+        acknowledge_warnings: bool = False,
+        owner_confirmed: bool = False,
+    ) -> str:
+        """Применить план. Только после согласия пользователя.
+
+        owner_confirmed=true — только для плана с пометкой «ОПАСНАЯ ОПЕРАЦИЯ»
+        и только после явного «да» владельца в чате на этот план.
+        """
         try:
             ctx = _ctx()
         except (ConfigError, TokenMissingError) as e:
             return f"Ошибка конфигурации: {e}"
-        return await do_apply_write(ctx, plan_id, acknowledge_warnings)
+        return await do_apply_write(ctx, plan_id, acknowledge_warnings, owner_confirmed)
 
     @mcp.tool()
     def get_operation_log(
@@ -359,8 +367,25 @@ def build_server(sandbox: bool = False) -> FastMCP:
 
 async def do_plan_write(ctx: Ctx, name: str, params: dict) -> str:
     """Shared plan_write body (also used by tests)."""
+    from directai_mcp.safety.guard import (
+        confirm_mode,
+        finish_danger_collection,
+        start_danger_collection,
+    )
+
+    if not confirm_mode(ctx):
+        return await _plan_write(ctx, name, params)
+    # v1.15.0: confirm — политические запреты копятся как опасные причины.
+    token = start_danger_collection()
+    try:
+        return await _plan_write(ctx, name, params)
+    finally:
+        finish_danger_collection(token)
+
+
+async def _plan_write(ctx: Ctx, name: str, params: dict) -> str:
     from directai_mcp.api.errors import AudienceError, DirectError
-    from directai_mcp.safety.guard import precheck
+    from directai_mcp.safety.guard import _DANGER_SINK, DANGER_NOTICE, precheck
 
     if guard_active(ctx):
         hit = precheck(name, params)
@@ -414,6 +439,10 @@ async def do_plan_write(ctx: Ctx, name: str, params: dict) -> str:
     finally:
         if client is not None:
             await client.aclose()
+    reasons: list[str] = []
+    for reason in _DANGER_SINK.get() or []:
+        if reason not in reasons:
+            reasons.append(reason)
     plan = Plan(
         plan_id="",
         action=name,
@@ -423,6 +452,7 @@ async def do_plan_write(ctx: Ctx, name: str, params: dict) -> str:
         requests=prep["requests"],
         preview=prep["preview"],
         warnings=prep.get("warnings", []),
+        danger=reasons,
     )
     plan_id = plans_for(ctx).put(plan)
     from directai_mcp.catalog.common import net_summary
@@ -438,6 +468,10 @@ async def do_plan_write(ctx: Ctx, name: str, params: dict) -> str:
     if plan.warnings:
         lines += ["", "Предупреждения (нужен acknowledge_warnings=true):"]
         lines += [f"- {w}" for w in plan.warnings]
+    if plan.danger:
+        lines += ["", DANGER_NOTICE,
+                  "Причины (в режиме block это был бы запрет):"]
+        lines += [f"- {d}" for d in plan.danger]
     mark = "[ПЕСОЧНИЦА] " if ctx.sandbox else ""
     if mark:
         lines.insert(0, mark)
@@ -446,7 +480,10 @@ async def do_plan_write(ctx: Ctx, name: str, params: dict) -> str:
 
 
 async def do_apply_write(
-    ctx: Ctx, plan_id: str, acknowledge_warnings: bool = False
+    ctx: Ctx,
+    plan_id: str,
+    acknowledge_warnings: bool = False,
+    owner_confirmed: bool = False,
 ) -> str:
     """Shared apply_write body (also used by tests)."""
     from directai_mcp.api.errors import DirectError, DirectUnverifiedError
@@ -471,6 +508,14 @@ async def do_apply_write(
                 "проверьте id и каталог планов."
             )
         return f"Ошибка: plan_id {plan_id} недоступен ({reason})."
+    if plan.danger and not owner_confirmed:
+        # v1.15.0: опасный план — только после явного «да» владельца.
+        return (
+            f"Ошибка: план {plan_id} — ОПАСНАЯ ОПЕРАЦИЯ ("
+            + "; ".join(plan.danger)
+            + "). Покажи причины владельцу; после его явного «да» в чате "
+            "повтори с owner_confirmed=true."
+        )
     if plan.warnings and not acknowledge_warnings:
         return (
             f"Ошибка: план {plan_id} содержит предупреждения; "
@@ -522,6 +567,8 @@ async def do_apply_write(
     if verify_result.get("display_empty") and status == "applied":
         status = "partial"
     summary = "; ".join(apply_result.get("lines", [])) + " | " + note
+    if plan.danger:
+        summary = "[ОПАСНАЯ, подтверждено владельцем] " + summary
     store.mark_terminal(
         plan.plan_id, "applied" if status in ("applied", "partial") else "failed"
     )

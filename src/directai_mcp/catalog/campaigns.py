@@ -1015,9 +1015,13 @@ class CampaignsUpdateParams(GetActionParams):
     settings: list[dict] | None = None
     # A9: TrackingParams с валидацией макросов (предупреждение, не блок).
     tracking_params: str | None = None
-    # v1.1.34: daily_budget УДАЛЁН — бюджеты запрещены политикой везде.
-    # Передача daily_budget блокируется guard до API
-    # («Изменение бюджета запрещено политикой»).
+    # v1.15.0: возвращены переименование и дневной бюджет (₽). Guard:
+    # mode=block — запрет до API; mode=confirm — «опасная операция»,
+    # применение только с owner_confirmed=true. Недельный бюджет — в strategy
+    # (WeeklySpendLimit внутри блока стратегии).
+    name: str | None = None
+    daily_budget: float | None = Field(default=None, gt=0)
+    daily_budget_mode: Literal["STANDARD", "DISTRIBUTED"] = "STANDARD"
 
 
 def _today() -> str:
@@ -1189,9 +1193,21 @@ async def _prepare_campaigns_update(
         given["_excluded_sites_add"] = list(params.excluded_sites)
     if params.tracking_params is not None:
         given["_tracking_params"] = params.tracking_params
+    if params.name is not None:
+        if not params.name.strip():
+            raise ValueError("name: пустое имя кампании.")
+        if len(params.campaign_ids) != 1:
+            raise ValueError("переименование — ровно одна кампания за план.")
+        given["Name"] = params.name.strip()
+    if params.daily_budget is not None:
+        given["DailyBudget"] = {
+            "Amount": round(params.daily_budget * 1_000_000),
+            "Mode": params.daily_budget_mode,
+        }
     if not given:
         raise ValueError(
-            "укажите end_date, negatives, strategy, excluded_sites или tracking_params.")
+            "укажите end_date, negatives, strategy, excluded_sites, "
+            "tracking_params, name или daily_budget.")
     client = ctx.direct()
     try:
         found = await client.get_all(
@@ -1200,7 +1216,7 @@ async def _prepare_campaigns_update(
                 "SelectionCriteria": {"Ids": params.campaign_ids},
                 # v1.8.0: Type через v501 (v5 отдаёт устаревший TEXT_CAMPAIGN
                 # для ЕПК) — для выбора блока стратегии и версии запроса.
-                "FieldNames": ["Id", "Name", "Type", "ExcludedSites"],
+                "FieldNames": ["Id", "Name", "Type", "ExcludedSites", "DailyBudget"],
                 "TextCampaignFieldNames": ["BiddingStrategy"],
                 "UnifiedCampaignFieldNames": ["BiddingStrategy"],
             },
@@ -1275,6 +1291,25 @@ async def _prepare_campaigns_update(
             body["ExcludedSites"] = {"Items": given["_excluded_merged"][body["Id"]]}
     desc = []
     warnings: list[str] = list(track_warnings)
+    if params.name is not None:
+        desc.append(f"имя → «{params.name.strip()}»")
+    budget_desc: dict[int, str] = {}
+    if params.daily_budget is not None:
+        from directai_mcp.safety.rules import check_ratio, load_rules
+
+        rules = load_rules(ctx.data_dir / "rules.toml" if ctx.data_dir else None)
+        for item in found:
+            cid = int(item["Id"])
+            raw = item.get("DailyBudget") or {}
+            old = (raw.get("Amount") / 1_000_000
+                   if isinstance(raw, dict) and raw.get("Amount") else None)
+            budget_desc[cid] = (
+                f"дневной бюджет: {f'{old:g} ₽' if old else 'нет'} → "
+                f"{params.daily_budget:g} ₽ ({params.daily_budget_mode})")
+            warn = check_ratio(rules.max_budget_ratio, old, params.daily_budget,
+                               f"кампания {cid} дневной бюджет")
+            if warn:
+                warnings.append(warn)
     if params.end_date is not None:
         desc.append(f"EndDate → {params.end_date}")
     if params.negatives is not None:
@@ -1308,7 +1343,8 @@ async def _prepare_campaigns_update(
                     + "."
                 )
     lines = [f"{names[cid]} ({cid}): " + "; ".join(
-        desc + ([excl_desc[cid]] if cid in excl_desc else []))
+        desc + ([excl_desc[cid]] if cid in excl_desc else [])
+        + ([budget_desc[cid]] if cid in budget_desc else []))
         for cid in params.campaign_ids]
     return {
         "before": names,
@@ -1351,6 +1387,13 @@ async def _verify_campaigns_updated(ctx: Ctx, entry: AccountEntry, plan) -> dict
                         for s in params["excluded_sites"] if str(s).strip()}
                 if not want <= got:
                     bad.append(f"{cid}.excluded: {len(got)} шт")
+            if params.get("name") is not None and cur.get("Name") != params["name"].strip():
+                bad.append(f"{cid}.Name: {cur.get('Name')!r}")
+            if params.get("daily_budget") is not None:
+                amount = (cur.get("DailyBudget") or {}).get("Amount")
+                want_amount = round(params["daily_budget"] * 1_000_000)
+                if amount != want_amount:
+                    bad.append(f"{cid}.DailyBudget: {amount!r}")
         return bad
 
     async def _read() -> dict:
@@ -1360,8 +1403,8 @@ async def _verify_campaigns_updated(ctx: Ctx, entry: AccountEntry, plan) -> dict
                 "campaigns",
                 {
                     "SelectionCriteria": {"Ids": params["campaign_ids"]},
-                    "FieldNames": ["Id", "EndDate", "NegativeKeywords",
-                                   "ExcludedSites"],
+                    "FieldNames": ["Id", "Name", "EndDate", "NegativeKeywords",
+                                   "ExcludedSites", "DailyBudget"],
                 },
                 entry.login,
                 "Campaigns",
@@ -1392,8 +1435,9 @@ async def _verify_campaigns_updated(ctx: Ctx, entry: AccountEntry, plan) -> dict
 
 write_action(
     "campaigns_update",
-    "Изменение кампаний: даты, минусы, исключения площадок, tracking_params "
-    "(бюджеты/стратегия запрещены политикой; "
+    "Изменение кампаний: даты, минусы, исключения площадок, tracking_params, "
+    "имя, дневной бюджет, стратегия (бюджет/стратегия/имя — по политике guard: "
+    "block — запрет, confirm — опасная операция с owner_confirmed; "
     "ENABLE_AREA_OF_INTEREST_TARGETING только читается — запись отклоняется)",
     ("изменить кампанию", "campaigns", "update", "настройки кампании",
      "исключить площадки", "excluded"),

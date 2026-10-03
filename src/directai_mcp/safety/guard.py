@@ -8,6 +8,7 @@ Every block carries GUARD_NOTICE: it is protection, not an error.
 
 from __future__ import annotations
 
+import contextvars
 import os
 
 from directai_mcp.api.direct import DirectClient
@@ -65,6 +66,43 @@ class GuardBlocked(Exception):
 
     def __init__(self, message: str) -> None:
         super().__init__(f"{message} {GUARD_NOTICE}")
+
+
+# v1.15.0: режим confirm. Политические запреты (бюджет/стратегия, модерация,
+# переименование, запись вне [TEST DirectAI]) не блокируют, а копятся здесь
+# как «опасные» причины: план создаётся с пометкой, apply требует
+# owner_confirmed=true. Жёсткими остаются: объект не найден/ошибка API,
+# read_only-поля (A1), переключатели Аудиторий/ретаргетинга, неизвестные
+# действия. None — режим block (политика = GuardBlocked).
+_DANGER_SINK: contextvars.ContextVar[list[str] | None] = contextvars.ContextVar(
+    "directai_danger_sink", default=None
+)
+
+DANGER_NOTICE = (
+    "⚠ ОПАСНАЯ ОПЕРАЦИЯ. Применять только после явного «да» владельца "
+    "в чате именно на этот план: покажи причины дословно, затем "
+    "apply_write с owner_confirmed=true. Без «да» — не применять."
+)
+
+
+def confirm_mode(ctx: Ctx) -> bool:
+    return guard_active(ctx) and getattr(ctx.settings, "guard_mode", "block") == "confirm"
+
+
+def start_danger_collection() -> contextvars.Token:
+    return _DANGER_SINK.set([])
+
+
+def finish_danger_collection(token: contextvars.Token) -> None:
+    _DANGER_SINK.reset(token)
+
+
+def policy(message: str) -> None:
+    """Политический запрет: block — GuardBlocked; confirm — опасная причина."""
+    sink = _DANGER_SINK.get()
+    if sink is None:
+        raise GuardBlocked(message)
+    sink.append(message)
 
 
 def guard_active(ctx: Ctx) -> bool:
@@ -181,7 +219,7 @@ async def require_test_campaign(
     if not name:
         raise GuardBlocked(f"кампания {campaign_id} не найдена в {login}.")
     if not _is_test(name):
-        raise GuardBlocked(
+        policy(
             f"запись в кампанию {campaign_id} («{name}») запрещена: вне тестового префикса."
         )
 
@@ -305,7 +343,7 @@ async def require_shared_exclusive(
         if not _is_test(names.get(cid, {}).get("Name"))
     ]
     if foreign:
-        raise GuardBlocked(
+        policy(
             f"объект {kind} {ref_id} используется вне тестовой кампании: "
             + ", ".join(foreign)
             + "."
@@ -429,7 +467,10 @@ def combat_allowed(action: str, params: dict) -> bool:
         return params.get("excluded_sites") is not None \
             and params.get("end_date") is None \
             and params.get("negatives") is None \
-            and params.get("strategy") is None
+            and params.get("strategy") is None \
+            and params.get("tracking_params") is None \
+            and params.get("name") is None \
+            and params.get("daily_budget") is None
     if action == "adgroups_update":
         groups = params.get("groups") or []
         if not groups:
@@ -452,12 +493,20 @@ def precheck(action: str, params: dict) -> str | None:
     """Read-free guard rules, applied before registry lookup.
 
     Covers future write actions (step 5+) so bypasses block in plan_write
-    even before the action is registered.
+    even before the action is registered. Returns a hard block text; policy
+    rules go through policy() (confirm mode — опасная причина, не блок).
     """
-    if action == "campaigns_update" and params.get("name") is not None:
-        return "переименование существующей кампании запрещено при защите."
-    if action == "ads_state" and params.get("operation") == "moderate":
-        return "модерация запрещена в режиме защиты."
+    try:
+        if action == "campaigns_update" and params.get("name") is not None:
+            policy("переименование существующей кампании запрещено при защите.")
+        if action == "ads_state" and params.get("operation") == "moderate":
+            policy("модерация запрещена в режиме защиты.")
+        if is_budget_write(action, params):
+            # v1.1.34: бюджеты запрещены везде, до обращения к API.
+            # Ловит и удалённый daily_budget (сырые параметры, до валидации).
+            policy(BUDGET_BLOCK)
+    except GuardBlocked as e:
+        return str(e).removesuffix(f" {GUARD_NOTICE}")
     if action == "campaigns_update" and params.get("settings"):
         # A1: неуправляемое поле — до обращения к API.
         try:
@@ -470,10 +519,6 @@ def precheck(action: str, params: dict) -> str | None:
                     )
         except ImportError:
             pass
-    if is_budget_write(action, params):
-        # v1.1.34: бюджеты запрещены везде, до обращения к API.
-        # Ловит и удалённый daily_budget (сырые параметры, до валидации).
-        return BUDGET_BLOCK
     return None
 
 
@@ -492,9 +537,10 @@ async def check_write(
     """Gate every write in guard mode; raises GuardBlocked. No-op outside."""
     if not guard_active(ctx):
         return
-    # v1.1.34: бюджеты — жёсткий запрет везде, включая [TEST DirectAI].
+    # v1.1.34: бюджеты — запрет везде, включая [TEST DirectAI]
+    # (v1.15.0: в режиме confirm — опасная причина, не блок).
     if is_budget_write(action, params):
-        raise GuardBlocked(BUDGET_BLOCK)
+        policy(BUDGET_BLOCK)
     if action == "audience_segment_from_file":
         # Мёрж в main: запись в Аудитории выключена по умолчанию, включается
         # только явным [audience] write_enabled=true. Дальше — тот же guard:
@@ -524,13 +570,11 @@ async def check_write(
     if action == "campaigns_create":
         name = params.get("name", "")
         if not (isinstance(name, str) and name.startswith(TEST_PREFIX)):
-            raise GuardBlocked("создание кампании без тестового префикса запрещено.")
+            policy("создание кампании без тестового префикса запрещено.")
         return
     if action == "campaigns_update":
         if params.get("name") is not None:
-            raise GuardBlocked(
-                "переименование существующей кампании запрещено при защите."
-            )
+            policy("переименование существующей кампании запрещено при защите.")
         # v1.1.34: ExcludedSites add — можно в боевой; остальное — только TEST.
         if combat_allowed(action, params):
             return
@@ -560,7 +604,7 @@ async def check_write(
         return
     if action == "ads_state":
         if params.get("operation") == "moderate":
-            raise GuardBlocked("модерация запрещена в режиме защиты.")
+            policy("модерация запрещена в режиме защиты.")
         for aid in params.get("ad_ids", []):
             await _require_ad(ctx, client, login, int(aid))
         return

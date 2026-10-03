@@ -56,6 +56,9 @@ class Settings:
     counter_id: int | None = None
     accounts_path: Path | None = None
     guard: bool = True
+    # v1.15.0: режим guard — block (жёсткий запрет) или confirm (опасная
+    # операция = план с пометкой, применение только с owner_confirmed=true).
+    guard_mode: str = "block"
     goal_names: dict[str, str] = field(default_factory=dict)
     # v1.1.5: счётчики неосновного счётчика (id -> counter).
     goal_counters: dict[str, int] = field(default_factory=dict)
@@ -181,6 +184,12 @@ def load_settings(path: Path | None = None) -> Settings:
 
     guard_section = data.get("guard", {}) or {}
     guard = bool(guard_section.get("guard", True))
+    guard_mode = str(guard_section.get("mode", "block")).strip().lower()
+    if guard_mode not in ("block", "confirm"):
+        raise ConfigError(
+            f"[guard] mode = {guard_mode!r} in {cfg_path}: "
+            "допустимо только \"block\" или \"confirm\"."
+        )
 
     goal_names = _load_goal_names(cfg_path.parent / "goals.toml")
     _, goal_counters, goal_value_types = _load_goals_file(cfg_path.parent / "goals.toml")
@@ -252,6 +261,7 @@ def load_settings(path: Path | None = None) -> Settings:
         counter_id=counter_id,
         accounts_path=cfg_path,
         guard=guard,
+        guard_mode=guard_mode,
         goal_names=goal_names,
         goal_counters=goal_counters,
         goal_value_types=goal_value_types,

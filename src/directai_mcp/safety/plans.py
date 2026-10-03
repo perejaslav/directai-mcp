@@ -49,6 +49,8 @@ class Plan:
     requests: list
     preview: str
     warnings: list[str] = field(default_factory=list)
+    # v1.15.0: причины «опасной операции» (guard mode=confirm).
+    danger: list[str] = field(default_factory=list)
     created_at: float = field(default_factory=time.time)
     status: str = STATUS_PENDING
 
@@ -101,6 +103,7 @@ class PlanStore:
             "requests": [list(r) for r in plan.requests],
             "preview": plan.preview,
             "warnings": list(plan.warnings or []),
+            "danger": list(plan.danger or []),
             "created_at": plan.created_at,
             "status": plan.status,
         }
@@ -117,6 +120,7 @@ class PlanStore:
             requests=[list(r) for r in (doc.get("requests") or [])],
             preview=str(doc.get("preview") or ""),
             warnings=list(doc.get("warnings") or []),
+            danger=list(doc.get("danger") or []),
             created_at=float(doc.get("created_at") or 0.0),
             status=str(doc.get("status") or STATUS_PENDING),
         )
