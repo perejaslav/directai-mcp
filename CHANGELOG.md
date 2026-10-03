@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## v1.14.1 (2026-10-03) — ads_update: журнал и перемодерация
+
+- Журнал кампании: `ads_update` теперь привязывается к кампании
+  (`CampaignId` читается вместе с объявлением и кладётся в `before`).
+  Раньше правки объявлений, в т.ч. привязка расширений, не попадали
+  в `campaign_journal`.
+- Предупреждение о перемодерации — только при реальном изменении текста,
+  заголовков, ссылки или DisplayUrlPath. Обязательный повтор текущего
+  `display_url_path` и одна привязка расширений его больше не вызывают.
+- Ограничение: `extensions_create` по-прежнему без привязки к кампании
+  (расширения общие для кабинета); `ads_state`, `keywords_update`,
+  `keywords_state`, `audience_target_state` — без привязки (бэклог).
+- Проверки: тесты `test_v1141_ads_update_journal.py` (5) + кейс журнала;
+  полный pytest — 685 passed, 2 failed вне изменений (нет keyring
+  в Linux-контейнере: test_doctor, test_webmaster); ruff — чисто.
+
 ## v1.14.0 (2026-10-03) — Wordstat API
 
 - Четыре действия чтения Yandex Cloud Search API v2: `wordstat_top`,

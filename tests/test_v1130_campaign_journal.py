@@ -44,6 +44,8 @@ CASES = [
     ),
     ("ads_create", {"adgroup_id": 9}, {"campaign_id": 5, "adgroup_id": 9}, None, [5]),
     ("ads_update", {"ad_ids": [3]}, None, None, []),
+    # v1.14.1: prepare кладёт CampaignId объявления в before.
+    ("ads_update", {"ad_ids": [3]}, {"3": {"campaign_id": 5}}, None, [5]),
     ("ads_state", {"ad_ids": [3], "operation": "suspend"}, None, None, []),
     ("keywords_add", {"adgroup_id": 9}, {"campaign_id": 5, "adgroup_id": 9}, None, [5]),
     ("keywords_update", {"keywords": [{"id": 4}]}, None, None, []),

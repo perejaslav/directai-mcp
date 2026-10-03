@@ -760,7 +760,7 @@ _API_FIELDS = {
 _RESPONSIVE_FIELDS = ("titles", "texts", "href", "display_url_path")
 
 _ADS_GET_BODY = {
-    "FieldNames": ["Id", "Type"],
+    "FieldNames": ["Id", "Type", "CampaignId"],
     "TextAdFieldNames": [
         "Title",
         "Title2",
@@ -1167,7 +1167,10 @@ async def _prepare_ads_update(ctx: Ctx, entry: AccountEntry, params: BaseModel) 
                 f"{f} ({_counter(f, text_given[f])}): "
                 f"{before[aid][f]} → {text_given[f]}" for f in text_given
             ) or _state_preview(before[aid])
-            if set(text_given) & _REMOD_FIELDS and _REMOD_NOTE not in warnings:
+            # v1.14.1: перемодерация — только при реальном изменении значения
+            # (display_url_path передаётся всегда, даже без изменения).
+            changed = {f for f in text_given if text_given[f] != before[aid][f]}
+            if changed & _REMOD_FIELDS and _REMOD_NOTE not in warnings:
                 warnings.append(_REMOD_NOTE)
             preview_lines.append(
                 f"{aid}: {changes}"
@@ -1242,7 +1245,12 @@ async def _prepare_ads_update(ctx: Ctx, entry: AccountEntry, params: BaseModel) 
                 f"{f} ({_counter(f, resp_given[f])}): "
                 f"{snapshot[f]} → {resp_given[f]}" for f in resp_given
             ) or _state_preview(before[aid])
-            if set(resp_given) & _REMOD_FIELDS and _REMOD_NOTE not in warnings:
+            changed = {
+                f for f in resp_given
+                if (list(resp_given[f]) if isinstance(resp_given[f], list)
+                    else resp_given[f]) != snapshot[f]
+            }
+            if changed & _REMOD_FIELDS and _REMOD_NOTE not in warnings:
                 warnings.append(_REMOD_NOTE)
             aid_bind = dict(bind_given)
             if "ad_extension_ids" in aid_bind:
@@ -1272,6 +1280,9 @@ async def _prepare_ads_update(ctx: Ctx, entry: AccountEntry, params: BaseModel) 
             raise ValueError(
                 f"объявление {aid}: поддерживаются только TEXT_AD и RESPONSIVE_AD."
             )
+        # v1.14.1: привязка операции к кампании в журнале (campaign_journal).
+        if found[aid].get("CampaignId") is not None:
+            before[aid]["campaign_id"] = found[aid]["CampaignId"]
     text_items = []
     resp_items = []
     for aid in params.ad_ids:
