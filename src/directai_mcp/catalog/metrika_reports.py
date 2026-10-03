@@ -32,6 +32,9 @@ from directai_mcp.config import ConfigError, resolve_primary_goal
 
 DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
+# v1.14.1: потолок строк stat/v1/data (все страницы); сверх — truncated.
+STAT_MAX_ROWS = 100_000
+
 GROUP_VALUES = ("source", "utm", "utm_full", "direct", "landing", "device", "region")
 
 BASE_METRICS = (
@@ -122,6 +125,14 @@ def resolve_dates(date_from: str, date_to: str) -> tuple[str, str] | str:
     return date_from, date_to
 
 
+def truncation_note(payload: dict) -> str | None:
+    """Текст о неполноте, если stat_table упёрся в STAT_MAX_ROWS."""
+    if payload.get("truncated"):
+        return (f"Отчёт неполный: строк больше {STAT_MAX_ROWS}, "
+                "показаны первые — сузьте период или фильтр.")
+    return None
+
+
 def human_metrika_error(counter_id: int, err: Exception) -> str:
     text = str(err)
     if "403" in text:
@@ -174,9 +185,15 @@ async def stat_table(
     metrics: list[str],
     attribution: str,
     filters: str | None,
-    limit: int = 100,
+    limit: int = 1000,
+    max_rows: int = STAT_MAX_ROWS,
 ) -> dict:
-    async def _one(ms: list[str]) -> dict:
+    """stat/v1/data со всеми страницами (v1.14.1: offset до total_rows).
+
+    `limit` — размер страницы. Сверх `max_rows` не тянем: тогда
+    `truncated=True` в ответе — вызывающий обязан показать неполноту.
+    """
+    async def _page(ms: list[str], offset: int) -> dict:
         params: dict[str, object] = {
             "ids": counter_id,
             "date1": date_from,
@@ -184,6 +201,7 @@ async def stat_table(
             "metrics": ",".join(ms),
             "accuracy": "full",
             "limit": limit,
+            "offset": offset,
             "lang": "ru",
             "sort": f"-{ms[0]}" if ms else "-ym:s:visits",
         }
@@ -197,6 +215,22 @@ async def stat_table(
         return await asyncio.to_thread(
             _stat_fetch, token, path, counter_id, f"metrika stat {counter_id}"
         )
+
+    async def _one(ms: list[str]) -> dict:
+        first = await _page(ms, 1)
+        data = list(first.get("data") or [])
+        total = first.get("total_rows")
+        total = int(total) if isinstance(total, (int, float)) else len(data)
+        while dimensions and len(data) < min(total, max_rows):
+            page = await _page(ms, len(data) + 1)
+            chunk = page.get("data") or []
+            if not chunk:
+                break
+            data.extend(chunk)
+        out = dict(first)
+        out["data"] = data[:max_rows]
+        out["truncated"] = total > len(out["data"])
+        return out
 
     if len(metrics) <= 20:
         return await _one(metrics)
@@ -244,6 +278,7 @@ async def stat_table(
     out = dict(first)
     out["data"] = data
     out["total_rows"] = len(data)
+    out["truncated"] = bool(first.get("truncated"))
     return out
 
 
@@ -569,6 +604,8 @@ async def _traffic(ctx: Ctx, params: BaseModel) -> str:
         )
     except MetrikaError as e:
         return human_metrika_error(counter_id, e)
+    if note := truncation_note(payload):
+        errors.append(note)
     group_cols = GROUP_COLUMNS[params.group_by]
     rows, raw, sampled = _traffic_rows(payload, group_cols, goal_ids, goal_names)
     if not rows and not errors:
@@ -649,6 +686,8 @@ async def _goals_report(ctx: Ctx, params: BaseModel) -> str:
         )
     except MetrikaError as e:
         return human_metrika_error(counter_id, e)
+    if note := truncation_note(payload):
+        errors.append(note)
     sampled = bool(payload.get("sampled"))
     data = payload.get("data") or []
     group_cols = GROUP_COLUMNS[params.group_by] if params.group_by else ()
@@ -763,6 +802,8 @@ async def _bytime(ctx: Ctx, params: BaseModel) -> str:
         )
     except MetrikaError as e:
         return human_metrika_error(counter_id, e)
+    if note := truncation_note(payload):
+        errors.append(note)
     sampled = bool(payload.get("sampled"))
     intervals: list = payload.get("time_intervals") or payload.get("intervals") or []
     data = payload.get("data") or []

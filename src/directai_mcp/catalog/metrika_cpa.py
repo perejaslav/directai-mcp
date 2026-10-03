@@ -22,6 +22,7 @@ from directai_mcp.catalog.metrika_reports import (
     human_metrika_error,
     resolve_goals,
     stat_table,
+    truncation_note,
 )
 from directai_mcp.catalog.registry import Ctx, action
 from directai_mcp.config import ConfigError
@@ -266,6 +267,8 @@ async def _cpa(ctx: Ctx, params: BaseModel) -> str:
             )
     except MetrikaError as e:
         return human_metrika_error(counter_ids[0], e)
+    if note := truncation_note(payload):
+        errors.append(note)
     sampled = bool(payload.get("sampled"))
     # Метрика: order_id -> {name, visits, bounce, goals}.
     metrika: dict[str, dict] = {}
@@ -474,6 +477,8 @@ async def _fetch_multi(
         except MetrikaError as e:
             problems.append(f"⚠ счётчик {cid} исключён: {e}")
             continue
+        if note := truncation_note(payload):
+            problems.append(f"⚠ счётчик {cid}: {note}")
         sampled = sampled or bool(payload.get("sampled"))
         for item in payload.get("data") or []:
             if not isinstance(item, dict):

@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## v1.14.1 (2026-10-03) — ads_update: журнал и перемодерация
+## v1.14.1 (2026-10-03) — ads_update: журнал и перемодерация; Метрика: все страницы
 
 - Журнал кампании: `ads_update` теперь привязывается к кампании
   (`CampaignId` читается вместе с объявлением и кладётся в `before`).
@@ -9,11 +9,18 @@
 - Предупреждение о перемодерации — только при реальном изменении текста,
   заголовков, ссылки или DisplayUrlPath. Обязательный повтор текущего
   `display_url_path` и одна привязка расширений его больше не вызывают.
+- Метрика: `stat/v1/data` теперь читает все страницы (`offset` до
+  `total_rows`, страница 1000, потолок 100 000 строк). Раньше
+  `metrika_goals_report`/`metrika_traffic`/`metrika_direct_cpa` с
+  группировкой брали только первые 100 строк, а dump ложно писал
+  `pagination_complete=true`. Сверх потолка — `truncated=true` и явная
+  пометка «Отчёт неполный» в выводе и dump.
 - Ограничение: `extensions_create` по-прежнему без привязки к кампании
   (расширения общие для кабинета); `ads_state`, `keywords_update`,
   `keywords_state`, `audience_target_state` — без привязки (бэклог).
-- Проверки: тесты `test_v1141_ads_update_journal.py` (5) + кейс журнала;
-  полный pytest — 685 passed, 2 failed вне изменений (нет keyring
+- Проверки: `test_v1141_ads_update_journal.py` (5),
+  `test_v1141_metrika_pagination.py` (4) + кейс журнала;
+  полный pytest — 689 passed, 2 failed вне изменений (нет keyring
   в Linux-контейнере: test_doctor, test_webmaster); ruff — чисто.
 
 ## v1.14.0 (2026-10-03) — Wordstat API
