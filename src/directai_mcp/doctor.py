@@ -406,6 +406,7 @@ def check_tokens() -> CheckResult:
         )
     from directai_mcp.config import (
         get_audience_token,
+        get_metrika_token,
         get_token,
         get_webmaster_token,
     )
@@ -416,8 +417,10 @@ def check_tokens() -> CheckResult:
         main = None
     audience = get_audience_token(settings.auth_login)
     webmaster = get_webmaster_token(settings.auth_login)
+    metrika = get_metrika_token(settings.auth_login)
     parts = [
         _token_presence("основной", main),
+        _token_presence("метрика", metrika),
         _token_presence("аудитории", audience),
         _token_presence("вебмастер", webmaster),
     ]
@@ -534,6 +537,100 @@ def check_hermes() -> CheckResult:
         status=STATUS_WARN,
         detail=f"test FAIL: {tail}",
         hint="проверить регистрацию сервера (examples/harness-configs.md), перезапустить шлюз `hermes -p default gateway start`, затем открыть новую сессию",
+    )
+
+
+async def _metrika_probe(token: str) -> tuple[dict, int]:
+    """Приложение токена и число доступных счётчиков (для doctor)."""
+    from directai_mcp.api import metrika as mk
+
+    app = await mk.oauth_app_info(token)
+    payload = await mk.get(token, "/management/v1/counters")
+    counters = payload.get("counters") if isinstance(payload, dict) else []
+    return app, len(counters or [])
+
+
+def check_metrika(skip_api: bool = False) -> CheckResult:
+    """l. Метрика: отдельный токен или токен Директа, приложение, чтение.
+
+    Право metrika:write не проверяется: Яндекс не отдаёт scopes токена, а
+    выяснить его можно только записью цели. Поэтому здесь факты: чей токен,
+    какое приложение его выпустило, читаются ли счётчики.
+    """
+    import asyncio
+
+    from directai_mcp.config import (
+        METRIKA_APP_CLIENT_ID,
+        METRIKA_SOURCE_LABELS,
+        ConfigError,
+        load_settings,
+        metrika_token_info,
+    )
+
+    try:
+        settings = load_settings()
+    except ConfigError as e:
+        return CheckResult(
+            id="l",
+            name="Метрика",
+            status=STATUS_WARN,
+            detail=f"конфиг не прочитан ({e})",
+            hint="сначала починить конфиг (проверка e)",
+        )
+    info = metrika_token_info(settings.auth_login)
+    source = info["source"]
+    label = METRIKA_SOURCE_LABELS[source]
+    detail = f"{label} (длина {info['length']})" if info["length"] else label
+    if source == "direct":
+        return CheckResult(
+            id="l",
+            name="Метрика",
+            status=STATUS_OK,
+            detail=detail + "; INFO: чтение токеном Директа, запись целей "
+            "недоступна",
+            hint="отдельный токен: `directai-mcp set-metrika-token --login "
+            f"{settings.auth_login}`",
+        )
+    if skip_api:
+        return CheckResult(
+            id="l",
+            name="Метрика",
+            status=STATUS_OK,
+            detail=detail + "; чтение пропущено флагом --skip-api; "
+            "metrika:write без записи не проверяется",
+        )
+    try:
+        from directai_mcp.config import get_metrika_token
+
+        settings_token = get_metrika_token(settings.auth_login) or ""
+        if not settings_token:
+            raise ValueError("нет отдельного токена Метрики")
+        app, counters = asyncio.run(_metrika_probe(settings_token))
+        app_id = str(app.get("client_id") or "")
+        detail += f"; приложение {app_id[:8]}…" if app_id else "; приложение ?"
+    except Exception as exc:  # noqa: BLE001
+        return CheckResult(
+            id="l",
+            name="Метрика",
+            status=STATUS_WARN,
+            detail=detail + f"; проверка не удалась: {type(exc).__name__}",
+            hint="directai-mcp check (строка «Метрика:») даёт подробности",
+        )
+    if app_id and app_id != METRIKA_APP_CLIENT_ID:
+        return CheckResult(
+            id="l",
+            name="Метрика",
+            status=STATUS_WARN,
+            detail=detail + f"; счётчиков {counters}",
+            hint=f"токен выдан не приложению Метрики (ожидался "
+            f"{METRIKA_APP_CLIENT_ID[:8]}…): перевыпустите токен",
+        )
+    return CheckResult(
+        id="l",
+        name="Метрика",
+        status=STATUS_OK,
+        detail=detail + f"; счётчиков {counters}; metrika:write без записи "
+        "не проверяется",
     )
 
 
@@ -672,6 +769,7 @@ def run_doctor(
         check_hermes(),
         check_audience(),
         check_retargeting(),
+        check_metrika(skip_api=skip_api),
         check_plans_dir(),
     ]
     if any(r.status == STATUS_FAIL for r in results):

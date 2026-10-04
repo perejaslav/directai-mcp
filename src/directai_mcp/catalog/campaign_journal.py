@@ -255,7 +255,7 @@ async def _metrika_metrics(
     ]
     try:
         payload = await stat_table(
-            ctx.token,
+            ctx.metrika_read_token(),
             counter_id,
             date_from,
             date_to,

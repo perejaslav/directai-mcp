@@ -19,6 +19,20 @@ WEBMASTER_TOKEN_ENV_VAR = "DIRECTAI_WEBMASTER_TOKEN"
 # лимит 3 группы разрешений, основной токен перевыпускать нельзя.
 KEYRING_SERVICE_AUDIENCE = "directai-mcp-audience"
 AUDIENCE_TOKEN_ENV_VAR = "DIRECTAI_AUDIENCE_TOKEN"
+# v1.17.1: отдельный OAuth-токен Метрики. Права metrika:read и
+# metrika:write не влезают в приложение Директа (у приложений «для
+# авторизации пользователей» лимит 3 группы разрешений), поэтому Метрика
+# живёт в своём приложении и своём ключе Credential Manager. Чтение без
+# этого токена работает на токене Директа (с предупреждением), запись целей
+# — нет (см. Ctx.require_metrika_write).
+KEYRING_SERVICE_METRIKA = "directai-mcp-metrika"
+METRIKA_TOKEN_ENV_VAR = "DIRECTAI_METRIKA_TOKEN"
+#: Параметры приложения Метрики — нужны только для инструкции
+#: `set-metrika-token`. Client secret в DirectAI не хранится и не нужен:
+#: токен выпускает владелец и вставляет в скрытое поле.
+METRIKA_APP_CLIENT_ID = "4365b214d435406c86315ab14c517350"
+METRIKA_OAUTH_REDIRECT = "https://oauth.yandex.ru/verification_code"
+METRIKA_APP_SCOPES = ("metrika:read", "metrika:write")
 # Yandex Cloud Wordstat API key (AI Studio), separate from the OAuth token
 # used by Yandex Direct.  The key itself is stored in the OS keyring.
 KEYRING_SERVICE_WORDSTAT = "directai-mcp-wordstat"
@@ -603,6 +617,55 @@ def get_audience_token(auth_login: str) -> str | None:
     import keyring
 
     return keyring.get_password(KEYRING_SERVICE_AUDIENCE, auth_login)
+
+
+def get_metrika_token(auth_login: str) -> str | None:
+    """Отдельный токен Метрики или None (тогда читаем токеном Директа).
+
+    По образцу Вебмастера и Аудиторий: права Метрики живут в отдельном
+    приложении Яндекс OAuth, токен хранится под своим ключом
+    (`directai-mcp set-metrika-token`). Токен никогда не логируется и не
+    печатается — наружу отдаётся только факт наличия (`metrika_token_info`).
+    """
+    env_token = os.environ.get(METRIKA_TOKEN_ENV_VAR)
+    if env_token:
+        return env_token
+    import keyring
+
+    return keyring.get_password(KEYRING_SERVICE_METRIKA, auth_login)
+
+
+#: Человеческие подписи источника токена Метрики (без самого токена).
+METRIKA_SOURCE_LABELS = {
+    "metrika": "отдельный токен Метрики",
+    "direct": "токен Директа (только чтение)",
+    "none": "нет токена",
+}
+
+
+def metrika_token_info(auth_login: str) -> dict:
+    """Источник токена Метрики и его длина — без значения токена.
+
+    `source`: metrika (отдельное приложение) | direct (fallback Директа,
+    запись целей недоступна) | none (нет ни одного токена).
+    """
+    separate = get_metrika_token(auth_login)
+    if separate:
+        return {"source": "metrika", "length": len(separate)}
+    try:
+        main = get_token(auth_login)
+    except TokenMissingError:
+        return {"source": "none", "length": 0}
+    return {"source": "direct", "length": len(main)}
+
+
+def metrika_token_label(auth_login: str) -> str:
+    """Строка для check / doctor / describe_action: «отдельный токен …»."""
+    info = metrika_token_info(auth_login)
+    label = METRIKA_SOURCE_LABELS[info["source"]]
+    if info["length"]:
+        return f"{label} (длина {info['length']})"
+    return label
 
 
 def get_wordstat_api_key(auth_login: str) -> str:

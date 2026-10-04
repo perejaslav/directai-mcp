@@ -43,6 +43,12 @@ class Ctx:
     # the original positional fields for compatibility with existing callers.
     wordstat_api_key: str = field(default="", repr=False)
     wordstat_folder_id: str | None = None
+    # v1.17.1: отдельный OAuth-токен Метрики (приложение с правами
+    # metrika:read + metrika:write). Пусто — читаем токеном Директа с
+    # предупреждением; запись целей без него запрещена (см. Ctx ниже).
+    metrika_token: str = field(default="", repr=False)
+    #: metrika (отдельное приложение) | direct (fallback на токен Директа)
+    metrika_token_source: str = "direct"
 
     def accounts(self, value: str) -> list[AccountEntry]:
         from directai_mcp.config import _home_of, _managed_cache, cache_age_days
@@ -93,6 +99,36 @@ class Ctx:
             self.net.merge(client.stats)
         self._clients.clear()
         return self.net
+
+    def metrika_read_token(self) -> str:
+        """Токен для ЧТЕНИЯ Метрики: отдельный, иначе токен Директа.
+
+        Fallback помечается примечанием в ответе действия — один раз за
+        вызов, чтобы чтение осталось рабочим у пользователей без
+        `set-metrika-token`.
+        """
+        if self.metrika_token:
+            return self.metrika_token
+        note = (
+            "Метрика читается токеном Директа (отдельный токен не выпущен): "
+            f"выпустите его командой `directai-mcp set-metrika-token --login "
+            f"{self.settings.auth_login}` — чтение продолжит работать и без "
+            "него, а запись целей доступна только с отдельным токеном."
+        )
+        if note not in self.notes:
+            self.notes.append(note)
+        return self.token
+
+    def require_metrika_write(self) -> str:
+        """Токен для ЗАПИСИ целей Метрики; без отдельного — отказ до API."""
+        if self.metrika_token and self.metrika_token_source == "metrika":
+            return self.metrika_token
+        raise ValueError(
+            "запись целей Метрики требует отдельный токен Метрики "
+            f"(metrika:write). Выпустите его командой `directai-mcp "
+            f"set-metrika-token --login {self.settings.auth_login}` и "
+            "повторите. Токен Директа для записи целей не используется."
+        )
 
 
 @dataclass(frozen=True)

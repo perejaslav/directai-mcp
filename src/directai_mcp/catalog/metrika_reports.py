@@ -383,20 +383,20 @@ async def resolve_goals(
     """(goal_ids, names, пометка). Default — основная цель, иначе все цели."""
     if goal_ids:
         try:
-            names = await counter_goal_names(ctx.token, counter_id)
+            names = await counter_goal_names(ctx.metrika_read_token(), counter_id)
         except MetrikaError:
             names = {}
         return list(goal_ids), names, ""
     cids = [campaign_id] if campaign_id else []
     primary, _source = resolve_primary_goal(ctx.settings, account, cids, None)
     try:
-        names = await counter_goal_names(ctx.token, counter_id)
+        names = await counter_goal_names(ctx.metrika_read_token(), counter_id)
     except MetrikaError:
         names = {}
     if primary:
         return [primary], names, ""
     try:
-        gtypes = await counter_goal_types(ctx.token, counter_id)
+        gtypes = await counter_goal_types(ctx.metrika_read_token(), counter_id)
     except MetrikaError:
         gtypes = {}
     all_ids = sorted(
@@ -599,7 +599,7 @@ async def _traffic(ctx: Ctx, params: BaseModel) -> str:
     metrics = metrics_for(goal_ids)
     try:
         payload = await stat_table(
-            ctx.token, counter_id, date_from, date_to, dims, metrics,
+            ctx.metrika_read_token(), counter_id, date_from, date_to, dims, metrics,
             params.attribution, filters,
         )
     except MetrikaError as e:
@@ -681,7 +681,7 @@ async def _goals_report(ctx: Ctx, params: BaseModel) -> str:
     )
     try:
         payload = await stat_table(
-            ctx.token, counter_id, date_from, date_to, dims, metrics,
+            ctx.metrika_read_token(), counter_id, date_from, date_to, dims, metrics,
             params.attribution, filters,
         )
     except MetrikaError as e:
@@ -797,7 +797,7 @@ async def _bytime(ctx: Ctx, params: BaseModel) -> str:
     filters = build_filters(params.filter_utm_source, params.filter_utm_campaign)
     try:
         payload = await stat_bytime(
-            ctx.token, counter_id, date_from, date_to, params.group,
+            ctx.metrika_read_token(), counter_id, date_from, date_to, params.group,
             metrics, params.attribution, filters,
         )
     except MetrikaError as e:

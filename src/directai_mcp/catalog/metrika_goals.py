@@ -12,6 +12,7 @@ v1.1.30: + инфо счётчика (имя/сайт/статус) и визи�
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import socket
 import ssl
@@ -23,11 +24,22 @@ from directai_mcp.config import AccountEntry
 METRIKA_HOST = "api-metrika.yandex.net"
 
 # counter_id -> {goal_id: metrika goal type}. Session = process.
-COUNTER_GOALS_CACHE: dict[int, dict[str, str]] = {}
+COUNTER_GOALS_CACHE: dict[tuple[str, int], dict[str, str]] = {}
 # counter_id -> info. Session = process.
-COUNTER_INFO_CACHE: dict[int, dict] = {}
+COUNTER_INFO_CACHE: dict[tuple[str, int], dict] = {}
 # counter_id -> {goal_id: name}. Session = process.
-COUNTER_GOAL_NAMES_CACHE: dict[int, dict[str, str]] = {}
+COUNTER_GOAL_NAMES_CACHE: dict[tuple[str, int], dict[str, str]] = {}
+
+
+def cache_scope(token: str) -> str:
+    """Несекретный ключ кеша: разные токены Метрики — разные записи.
+
+    v1.17.1: чтение идёт либо отдельным токеном Метрики, либо токеном
+    Директа (fallback). Кеш процесса общий, поэтому в ключ входит
+    отпечаток токена — иначе счётчик, прочитанный одним токеном, мог бы
+    отдаваться по другому. В логи и ответы ключ не попадает.
+    """
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()[:12]
 
 
 class MetrikaError(Exception):
@@ -91,7 +103,8 @@ def _fetch_counter_goals(token: str, counter_id: int, timeout: float = 30.0) -> 
 
 async def counter_goal_types(token: str, counter_id: int) -> dict[str, str]:
     """{goal_id: metrika type} (process cache)."""
-    cached = COUNTER_GOALS_CACHE.get(counter_id)
+    key = (cache_scope(token), counter_id)
+    cached = COUNTER_GOALS_CACHE.get(key)
     if cached is not None:
         return cached
     payload = await asyncio.to_thread(_fetch_counter_goals, token, counter_id)
@@ -104,15 +117,15 @@ async def counter_goal_types(token: str, counter_id: int) -> dict[str, str]:
         out[str(g["id"])] = str(g.get("type") or "")
         if g.get("name"):
             names[str(g["id"])] = str(g["name"])
-    COUNTER_GOALS_CACHE[counter_id] = out
-    COUNTER_GOAL_NAMES_CACHE[counter_id] = names
+    COUNTER_GOALS_CACHE[key] = out
+    COUNTER_GOAL_NAMES_CACHE[key] = names
     return out
 
 
 async def counter_goal_names(token: str, counter_id: int) -> dict[str, str]:
     """v1.1.30: {goal_id: name} (process cache, same fetch as types)."""
     await counter_goal_types(token, counter_id)
-    return dict(COUNTER_GOAL_NAMES_CACHE.get(counter_id, {}))
+    return dict(COUNTER_GOAL_NAMES_CACHE.get((cache_scope(token), counter_id), {}))
 
 
 def metrika_type_to_value(mtype: str) -> str:
@@ -123,7 +136,8 @@ def metrika_type_to_value(mtype: str) -> str:
 async def counter_info(token: str, counter_id: int) -> dict:
     """v1.1.30: инфо счётчика {id,name,site,status,code_status,activity}
     (process cache)."""
-    cached = COUNTER_INFO_CACHE.get(counter_id)
+    key = (cache_scope(token), counter_id)
+    cached = COUNTER_INFO_CACHE.get(key)
     if cached is not None:
         return cached
 
@@ -150,7 +164,7 @@ async def counter_info(token: str, counter_id: int) -> dict:
         }
 
     info = await asyncio.to_thread(_fetch)
-    COUNTER_INFO_CACHE[counter_id] = info
+    COUNTER_INFO_CACHE[key] = info
     return info
 
 
@@ -275,7 +289,7 @@ async def resolve_value_types(
         for cid in login_counters:
             try:
                 for gid, mtype in (
-                    await counter_goal_types(ctx.token, cid)
+                    await counter_goal_types(ctx.metrika_read_token(), cid)
                 ).items():
                     metrika_types.setdefault(gid, mtype)
                 metrika_ok = True

@@ -121,3 +121,36 @@ async def put(token: str, path: str, body: dict[str, Any]) -> Any:
 
 async def delete(token: str, path: str) -> Any:
     return await _call(token, "DELETE", path, write=True)
+
+
+#: Какое приложение выпустило токен (v1.17.1). Нужен, чтобы check/doctor
+#: подтверждали, что Метрике достался именно токен приложения Метрики, а не
+#: Директа. Права (scopes) эндпоинт НЕ отдаёт — см. DECISIONS v1.17.1,
+#: поэтому «есть ли metrika:write» без записи не проверяется.
+OAUTH_INFO_URL = "https://login.yandex.ru/info?format=json&oauth_token={token}"
+
+
+async def oauth_app_info(token: str) -> dict:
+    """client_id и login приложения, выпустившего токен (без токена в ответе).
+
+    IPv4 принудительно — как во всех транспортах репозитория (TLS поверх
+    IPv6 на login.yandex.ru рвётся, см. DECISIONS v1.2.4).
+    """
+    transport = httpx.AsyncHTTPTransport(local_address="0.0.0.0")
+    try:
+        async with httpx.AsyncClient(timeout=15.0, transport=transport) as c:
+            resp = await c.get(OAUTH_INFO_URL.format(token=token))
+    except httpx.HTTPError as exc:
+        return {"error": f"{type(exc).__name__}"}
+    if resp.status_code != 200:
+        return {"error": f"HTTP {resp.status_code}"}
+    try:
+        payload = resp.json()
+    except ValueError:
+        return {"error": "bad json"}
+    if not isinstance(payload, dict):
+        return {"error": "неожиданный ответ"}
+    return {
+        "client_id": str(payload.get("client_id") or ""),
+        "login": str(payload.get("login") or ""),
+    }

@@ -29,6 +29,18 @@ from directai_mcp.server import PLANS, do_apply_write, do_plan_write
 BASE = "https://api-metrika.yandex.net"
 COUNTER = 54578446
 TOKEN = "secret-token-value"
+METRIKA_TOKEN = "metrika-secret-token-value"
+
+
+def _ctx_direct_token(tmp_path, mode="confirm"):
+    """Ctx без отдельного токена Метрики: запись целей запрещена."""
+    settings = Settings(
+        auth_login="agency-login",
+        accounts={"m": AccountEntry(alias="m", login="agency-login")},
+        accounts_path=tmp_path / "accounts.toml",
+        guard_mode=mode,
+    )
+    return Ctx(settings=settings, token=TOKEN, data_dir=tmp_path)
 
 
 @pytest.fixture(autouse=True)
@@ -45,7 +57,15 @@ def _ctx(tmp_path, mode="confirm"):
         accounts_path=tmp_path / "accounts.toml",
         guard_mode=mode,
     )
-    return Ctx(settings=settings, token=TOKEN, data_dir=tmp_path)
+    # v1.17.1: запись целей идёт отдельным токеном Метрики (metrika:write);
+    # токен Директа для записи не используется.
+    return Ctx(
+        settings=settings,
+        token=TOKEN,
+        data_dir=tmp_path,
+        metrika_token=METRIKA_TOKEN,
+        metrika_token_source="metrika",
+    )
 
 
 def _counter(permission="own", counter_id=COUNTER):
@@ -648,16 +668,62 @@ async def test_403_explains_metrika_write_scope(respx_mock, tmp_path):
             counter_id=COUNTER, type="number", name="Глубина", depth=2))
     text = str(err.value)
     assert "metrika:write" in text
-    assert "set-token --login" in text
+    assert "set-metrika-token --login" in text
     assert TOKEN not in text
+    assert METRIKA_TOKEN not in text
+
+
+# -- отдельный токен Метрики обязателен для записи (v1.17.1) -----------------
+
+
+async def test_write_refused_without_metrika_token(tmp_path):
+    """Без отдельного токена Метрики запись не начинается (ни одного запроса)."""
+    ctx = _ctx_direct_token(tmp_path)
+    with pytest.raises(ValueError) as err:
+        await gw._prepare_create(ctx, None, _params(
+            counter_id=COUNTER, type="number", name="Глубина", depth=2))
+    assert "set-metrika-token --login" in str(err.value)
+    with pytest.raises(ValueError, match="set-metrika-token"):
+        await gw._prepare_delete(
+            ctx, None, MetrikaGoalDeleteParams(counter_id=COUNTER, goal_id=7))
+
+
+async def test_plan_write_refuses_without_metrika_token(respx_mock, tmp_path):
+    """Ни плана, ни запросов: понятная ошибка вместо записи токеном Директа."""
+    ctx = _ctx_direct_token(tmp_path)
+    route = respx_mock.get(f"{BASE}/management/v1/counter/{COUNTER}")
+    goals = respx_mock.get(f"{BASE}/management/v1/counter/{COUNTER}/goals")
+    out = await do_plan_write(ctx, "metrika_goal_create", {
+        "counter_id": COUNTER, "type": "number", "name": "Глубина", "depth": 2})
+    assert "Ошибка подготовки" in out
+    assert "set-metrika-token --login" in out
+    assert not route.called
+    assert not goals.called
+    assert "План " not in out
+
+
+async def test_read_token_falls_back_to_direct_with_note(tmp_path):
+    """Чтение остаётся рабочим на токене Директа и объясняет, что делать."""
+    ctx = _ctx_direct_token(tmp_path)
+    assert ctx.metrika_read_token() == TOKEN
+    assert ctx.metrika_read_token() == TOKEN  # примечание не дублируется
+    notes = [n for n in ctx.notes if "set-metrika-token" in n]
+    assert len(notes) == 1
+
+
+async def test_separate_token_used_without_fallback_note(tmp_path):
+    ctx = _ctx(tmp_path)
+    assert ctx.metrika_read_token() == METRIKA_TOKEN
+    assert not ctx.notes
 
 
 async def test_401_hint_no_token_in_text(respx_mock, tmp_path):
     respx_mock.get(f"{BASE}/management/v1/counter/{COUNTER}/goals").mock(
         return_value=httpx.Response(401, text="Unauthorized"))
     with pytest.raises(ValueError) as err:
-        await gw._goals(TOKEN, COUNTER)
-    assert "set-token --login" in str(err.value)
+        await gw._goals(METRIKA_TOKEN, COUNTER)
+    assert "set-metrika-token --login" in str(err.value)
+    assert METRIKA_TOKEN not in str(err.value)
     assert TOKEN not in str(err.value)
 
 

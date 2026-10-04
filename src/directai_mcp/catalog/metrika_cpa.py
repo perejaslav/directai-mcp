@@ -225,7 +225,7 @@ async def _cpa(ctx: Ctx, params: BaseModel) -> str:
                 params.campaign_ids[0] if len(params.campaign_ids) == 1 else None,
             )
             try:
-                own = set(await counter_goal_types(ctx.token, cid))
+                own = set(await counter_goal_types(ctx.metrika_read_token(), cid))
             except MetrikaError:
                 own = set()
             if len(gids) == 1 and own and gids[0] not in own:
@@ -261,7 +261,7 @@ async def _cpa(ctx: Ctx, params: BaseModel) -> str:
             errors.extend(multi_problems)
         else:
             payload = await stat_table(
-                ctx.token, counter_ids[0], date_from, date_to,
+                ctx.metrika_read_token(), counter_ids[0], date_from, date_to,
                 ["ym:s:lastDirectClickOrder"], metrics,
                 params.attribution, None,
             )
@@ -471,7 +471,7 @@ async def _fetch_multi(
         ]
         try:
             payload = await stat_table(
-                ctx.token, cid, date_from, date_to,
+                ctx.metrika_read_token(), cid, date_from, date_to,
                 ["ym:s:lastDirectClickOrder"], metrics, attribution, None,
             )
         except MetrikaError as e:

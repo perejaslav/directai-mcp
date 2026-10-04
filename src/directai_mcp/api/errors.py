@@ -87,10 +87,11 @@ class MetrikaApiError(Exception):
 #: только инструкция, как перевыпустить токен с нужным правом.
 METRIKA_WRITE_SCOPE_HINT = (
     "у токена нет права metrika:write (создание/изменение/удаление целей "
-    "Метрики). Перевыпустите токен: в приложении Яндекс ID откройте доступ "
-    "«Яндекс Метрика» и включите право metrika:write, затем у себя в "
-    "терминале выполните `directai-mcp set-token --login <ваш логин>` и "
-    "вставьте новый токен в скрытое поле. Токен в чат не пишите."
+    "Метрики). Перевыпустите токен в приложении Метрики (доступ «Яндекс "
+    "Метрика», права metrika:read и metrika:write), затем у себя в "
+    "терминале выполните `directai-mcp set-metrika-token --login "
+    "<ваш логин>` и вставьте новый токен в скрытое поле. Токен в чат не "
+    "пишите."
 )
 
 
@@ -98,7 +99,7 @@ def metrika_hint(status: int) -> str:
     if status == 401:
         return (
             "токен не принят Метрикой — перевыпустите: "
-            "`directai-mcp set-token --login <ваш логин>`"
+            "`directai-mcp set-metrika-token --login <ваш логин>`"
         )
     if status == 403:
         return METRIKA_WRITE_SCOPE_HINT

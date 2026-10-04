@@ -19,11 +19,17 @@ from directai_mcp.api.errors import DirectError
 from directai_mcp.config import (
     KEYRING_SERVICE,
     KEYRING_SERVICE_AUDIENCE,
+    KEYRING_SERVICE_METRIKA,
     KEYRING_SERVICE_WEBMASTER,
     KEYRING_SERVICE_WORDSTAT,
+    METRIKA_APP_CLIENT_ID,
+    METRIKA_APP_SCOPES,
+    METRIKA_OAUTH_REDIRECT,
+    METRIKA_SOURCE_LABELS,
     ConfigError,
     TokenMissingError,
     data_dir,
+    get_metrika_token,
     get_token,
     load_settings,
 )
@@ -145,6 +151,48 @@ def cmd_set_token(
     return 0
 
 
+def cmd_set_metrika_token(login: str | None = None) -> int:
+    """Отдельный токен Метрики (приложение metrika:read + metrika:write).
+
+    OAuth-поток проходит владелец в браузере (как для Директа): DirectAI не
+    знает client secret и не входит в Яндекс OAuth сам. Здесь — печать
+    параметров приложения и сохранение выпущенного токена в Credential
+    Manager под своим ключом. Токен вводится в скрытое поле и никогда не
+    печатается, не логируется.
+    """
+    target = data_dir()
+    target.mkdir(parents=True, exist_ok=True)
+    setup_logging(target)
+    resolved_login = login
+    if not resolved_login:
+        try:
+            resolved_login = load_settings().auth_login
+        except ConfigError:
+            from directai_mcp.config import DEFAULT_AUTH_LOGIN
+
+            resolved_login = DEFAULT_AUTH_LOGIN
+            print(f"no accounts.toml, using login '{resolved_login}'")
+    auth_url = (
+        "https://oauth.yandex.ru/authorize?response_type=token"
+        f"&client_id={METRIKA_APP_CLIENT_ID}&redirect_uri={METRIKA_OAUTH_REDIRECT}"
+    )
+    print("Выпустите токен Метрики (права: " + ", ".join(METRIKA_APP_SCOPES) + "):")
+    print(f"  1. Откройте в браузере (войдите под {resolved_login}):")
+    print(f"     {auth_url}")
+    print("  2. Разрешите доступ и скопируйте токен из адресной строки.")
+    print("  3. Вставьте его в скрытое поле ниже. В чат токен не пишите.")
+    token = getpass.getpass(f"token Метрики for {resolved_login}: ").strip()
+    if not token:
+        print("empty token, not saved", file=sys.stderr)
+        return 1
+    import keyring
+
+    keyring.set_password(KEYRING_SERVICE_METRIKA, resolved_login, token)
+    print(f"saved to Credential Manager: {KEYRING_SERVICE_METRIKA}/{resolved_login}")
+    print("проверка: directai-mcp check (строка «Метрика:») и doctor")
+    return 0
+
+
 def _save_wordstat_folder_id(folder_id: str, path: Path) -> Path:
     """Persist the non-secret Wordstat folder ID without rewriting the TOML.
 
@@ -245,6 +293,7 @@ async def _check_all(sandbox: bool) -> int:
         if line.startswith("FAIL"):
             ok = False
     print(await _check_audience(settings.auth_login, token))
+    print(await _check_metrika(settings, token))
     for warn in _check_primary_goals(settings, token):
         print(warn)
     if sandbox:
@@ -275,9 +324,11 @@ def _check_primary_goals(settings, token: str) -> list[str]:
         import json as _json
 
         from directai_mcp.catalog.metrika_goals import _check_status, _mget
+        from directai_mcp.config import get_metrika_token
 
         status, body = _mget(
-            token, f"/management/v1/counter/{settings.counter_id}/goals"
+            get_metrika_token(settings.auth_login) or token,
+            f"/management/v1/counter/{settings.counter_id}/goals",
         )
         _check_status("metrika goals", status)
         payload = _json.loads(body)
@@ -293,6 +344,56 @@ def _check_primary_goals(settings, token: str) -> list[str]:
     except Exception as e:  # noqa: BLE001
         out.append(f"ВНИМАНИЕ: сверка целей с Метрикой пропущена: {e} (не ошибка).")
     return out
+
+
+async def _check_metrika(settings, main_token: str) -> str:
+    """Строка check по Метрике: источник токена, приложение, чтение.
+
+    Право metrika:write отдельно не спрашивается: Яндекс не отдаёт scopes
+    токена, а любой запрос, который его выяснил, создал бы или удалил цель.
+    Поэтому здесь только факты: чей токен, какое приложение его выпустило и
+    читается ли счётчик. Запись целей доступна только с отдельным токеном
+    Метрики (Ctx.require_metrika_write).
+    """
+    from directai_mcp.api import metrika as mk
+    from directai_mcp.api.errors import MetrikaApiError
+    from directai_mcp.config import metrika_token_info
+
+    info = metrika_token_info(settings.auth_login)
+    separate = get_metrika_token(settings.auth_login)
+    source = info["source"]
+    if source == "none":
+        return (
+            "Метрика: нет токена (нет ни отдельного, ни основного — "
+            "directai-mcp set-metrika-token --login <логин>)"
+        )
+    token = separate or main_token
+    app = await mk.oauth_app_info(token)
+    app_id = app.get("client_id") or ""
+    app_text = (
+        f"приложение {app_id[:8]}…" if app_id else "приложение неизвестно"
+    )
+    parts = [f"Метрика: {METRIKA_SOURCE_LABELS[source]} ({app_text})"]
+    if source == "metrika":
+        if app_id and app_id != METRIKA_APP_CLIENT_ID:
+            parts.append(
+                f"ВНИМАНИЕ: токен выдан другому приложению ({app_id[:8]}…), "
+                "а не приложению Метрики"
+            )
+        parts.append("metrika:write: без записи не проверяется (прав нет в API)")
+    else:
+        parts.append(
+            "запись целей недоступна: нужен отдельный токен — "
+            "directai-mcp set-metrika-token --login "
+            f"{settings.auth_login}"
+        )
+    try:
+        payload = await mk.get(token, "/management/v1/counters")
+    except MetrikaApiError as e:
+        return "FAIL " + " ".join(parts + [f"чтение: {e}"])
+    counters = payload.get("counters") if isinstance(payload, dict) else []
+    parts.append(f"чтение OK: счётчиков {len(counters or [])}")
+    return "OK " + " ".join(parts)
 
 
 async def _check_audience(auth_login: str, main_token: str) -> str:
@@ -419,6 +520,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     sub.add_parser("check", help="Clients.get + campaign count per account")
+
+    smt = sub.add_parser(
+        "set-metrika-token",
+        help="save separate Yandex Metrika OAuth token (metrika:read/write)",
+    )
+    smt.add_argument("--login", default=None)
     sub.add_parser("serve", help="run MCP server over STDIO (step 2)")
     pr = sub.add_parser(
         "probe",
@@ -457,6 +564,8 @@ def main(argv: list[str] | None = None) -> None:
                 folder_id=args.folder_id,
             )
         )
+    if args.command == "set-metrika-token":
+        raise SystemExit(cmd_set_metrika_token(args.login))
     if args.command == "check":
         raise SystemExit(cmd_check(sandbox=args.sandbox))
     if args.command == "probe":

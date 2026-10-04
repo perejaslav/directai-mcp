@@ -394,8 +394,12 @@ def server_version_warnings(
     return out
 
 
-def server_status() -> str:
-    """v1.16.1: блок версий для describe_action без аргументов."""
+def server_status(metrika_line: str = "") -> str:
+    """v1.16.1: блок версий для describe_action без аргументов.
+
+    `metrika_line` (v1.17.1) готовит вызывающий: каталог не читает конфиг и
+    токены — это делает сервер.
+    """
     meta = package_version()
     disk = on_disk_version()
     lines = [
@@ -404,6 +408,8 @@ def server_status() -> str:
         f"code_version (код, запущенный в этом процессе): {RUNNING_VERSION}",
         f"disk_version (исходники на диске): {disk or '—'}",
     ]
+    if metrika_line:
+        lines.append(metrika_line)
     warnings = server_version_warnings(RUNNING_VERSION, disk, meta)
     if warnings:
         lines += ["", *warnings]

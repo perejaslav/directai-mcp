@@ -72,6 +72,7 @@ from directai_mcp.config import (
     ConfigError,
     TokenMissingError,
     data_dir,
+    get_metrika_token,
     get_token,
     get_wordstat_api_key,
     load_settings,
@@ -129,6 +130,32 @@ INSTRUCTIONS = (
     "групп, минусы add, ExcludedSites add, ставки/корректировки; replace, "
     "пауза кампаний/объявлений и удаления — только [TEST DirectAI]."
 )
+
+def _metrika_token_status() -> str:
+    """v1.17.1: строка «Метрика: …» для describe_action без аргументов.
+
+    Конфиг и токены читаются здесь, а не в каталоге: каталог работает с
+    готовым Ctx. Значение токена в строке не участвует — только источник
+    (отдельный токен Метрики или токен Директа) и длина.
+    """
+    from directai_mcp.config import (
+        METRIKA_SOURCE_LABELS,
+        load_settings,
+        metrika_token_info,
+    )
+
+    try:
+        settings = load_settings()
+    except ConfigError as exc:
+        return f"Метрика: конфиг не прочитан ({exc})"
+    info = metrika_token_info(settings.auth_login)
+    label = METRIKA_SOURCE_LABELS[info["source"]]
+    if info["length"]:
+        label += f" (длина {info['length']})"
+    if info["source"] == "direct":
+        label += " — чтение работает, запись целей недоступна"
+    return f"Метрика: {label}"
+
 
 def _points(login: str) -> str:
     """Шаг 1.1-4 (Q4): остаток + время обновления («—» без данных)."""
@@ -211,11 +238,17 @@ def build_server(sandbox: bool = False) -> FastMCP:
                     "Wordstat folderId не настроен. "
                     "Запустите `directai-mcp set-token --wordstat`."
                 )
+        # v1.17.1: Метрика — отдельное приложение (metrika:read/write).
+        # Пусто -> читаем токеном Директа (с примечанием), запись целей
+        # запрещена (Ctx.require_metrika_write).
+        metrika_token = get_metrika_token(settings.auth_login) or ""
         return Ctx(
             settings=settings,
             token=token,
             wordstat_api_key=wordstat_api_key,
             wordstat_folder_id=settings.wordstat_folder_id,
+            metrika_token=metrika_token,
+            metrika_token_source="metrika" if metrika_token else "direct",
             sandbox=sandbox,
             data_dir=data_dir(),
         )
@@ -267,13 +300,14 @@ def build_server(sandbox: bool = False) -> FastMCP:
         """Описание действия: параметры (JSON Schema), пример, ограничения.
 
         Без name (или с пустой строкой) — статус сервера: server_version
-        (пакет), code_version (запущенный код), disk_version (исходники) и
-        предупреждения, если они расходятся. Вызов не тратит API.
+        (пакет), code_version (запущенный код), disk_version (исходники),
+        строка о токене Метрики и предупреждения, если версии расходятся.
+        Вызов не тратит API.
         """
         if not name:
             from directai_mcp.catalog.common import server_status
 
-            return server_status()
+            return server_status(_metrika_token_status())
         act = ACTIONS.get(name)
         if act is None:
             valid = ", ".join(sorted(ACTIONS))

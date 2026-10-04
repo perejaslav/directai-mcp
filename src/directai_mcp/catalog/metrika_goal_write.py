@@ -697,8 +697,9 @@ async def _prepare_create(
     ctx: Ctx, entry: AccountEntry, params: BaseModel
 ) -> dict:
     assert isinstance(params, MetrikaGoalCreateParams)
-    permission = await _require_editable(ctx.token, params.counter_id)
-    goals = await _goals(ctx.token, params.counter_id)
+    token = ctx.require_metrika_write()
+    permission = await _require_editable(token, params.counter_id)
+    goals = await _goals(token, params.counter_id)
     if len(goals) >= MAX_GOALS_PER_COUNTER:
         raise ValueError(
             f"счётчик {params.counter_id}: уже {len(goals)} целей, а лимит "
@@ -752,7 +753,7 @@ async def _apply_create(ctx: Ctx, entry: AccountEntry, plan) -> dict:
     body = plan.requests[0][2]["goal"]
     try:
         payload = await mk.post(
-            ctx.token,
+            ctx.require_metrika_write(),
             f"/management/v1/counter/{counter_id}/goals",
             {"goal": body},
         )
@@ -794,7 +795,7 @@ async def _verify_create(ctx: Ctx, entry: AccountEntry, plan) -> dict:
     last = getattr(plan, "last_response", None) or {}
     goal_id = last.get("goal_id") if isinstance(last, dict) else None
     try:
-        goals = await _goals(ctx.token, counter_id)
+        goals = await _goals(ctx.require_metrika_write(), counter_id)
     except ValueError as exc:
         return {"after": None, "ok": False, "note": f"read-back не удался: {exc}"}
     found = await _find_live(goals, goal_id, body, str(body.get("name")))
@@ -836,8 +837,9 @@ async def _prepare_update(
     ctx: Ctx, entry: AccountEntry, params: BaseModel
 ) -> dict:
     assert isinstance(params, MetrikaGoalUpdateParams)
-    permission = await _require_editable(ctx.token, params.counter_id)
-    goals = await _goals(ctx.token, params.counter_id)
+    token = ctx.require_metrika_write()
+    permission = await _require_editable(token, params.counter_id)
+    goals = await _goals(token, params.counter_id)
     live = next(
         (g for g in goals if g.get("id") == params.goal_id), None
     )
@@ -934,7 +936,7 @@ async def _apply_update(ctx: Ctx, entry: AccountEntry, plan) -> dict:
     body = plan.requests[0][2]["goal"]
     try:
         payload = await mk.put(
-            ctx.token,
+            ctx.require_metrika_write(),
             f"/management/v1/counter/{counter_id}/goal/{goal_id}",
             {"goal": body},
         )
@@ -976,7 +978,7 @@ async def _verify_update(ctx: Ctx, entry: AccountEntry, plan) -> dict:
     goal_id = int(plan.params["goal_id"])
     body = plan.requests[0][2]["goal"]
     try:
-        goals = await _goals(ctx.token, counter_id)
+        goals = await _goals(ctx.require_metrika_write(), counter_id)
     except ValueError as exc:
         return {"after": None, "ok": False, "note": f"read-back не удался: {exc}"}
     live = next((g for g in goals if g.get("id") == goal_id), None)
@@ -1024,8 +1026,9 @@ async def _prepare_delete(
     ctx: Ctx, entry: AccountEntry, params: BaseModel
 ) -> dict:
     assert isinstance(params, MetrikaGoalDeleteParams)
-    permission = await _require_editable(ctx.token, params.counter_id)
-    goals = await _goals(ctx.token, params.counter_id)
+    token = ctx.require_metrika_write()
+    permission = await _require_editable(token, params.counter_id)
+    goals = await _goals(token, params.counter_id)
     live = next((g for g in goals if g.get("id") == params.goal_id), None)
     if live is None:
         raise ValueError(
@@ -1078,7 +1081,8 @@ async def _apply_delete(ctx: Ctx, entry: AccountEntry, plan) -> dict:
     name = str((plan.before or {}).get("goal", {}).get("name") or "?")
     try:
         payload = await mk.delete(
-            ctx.token, f"/management/v1/counter/{counter_id}/goal/{goal_id}"
+            ctx.require_metrika_write(),
+            f"/management/v1/counter/{counter_id}/goal/{goal_id}",
         )
     except MetrikaApiError as exc:
         if exc.unverified:
@@ -1115,7 +1119,7 @@ async def _verify_delete(ctx: Ctx, entry: AccountEntry, plan) -> dict:
     counter_id = int(plan.params["counter_id"])
     goal_id = int(plan.params["goal_id"])
     try:
-        goals = await _goals(ctx.token, counter_id)
+        goals = await _goals(ctx.require_metrika_write(), counter_id)
     except ValueError as exc:
         return {"after": None, "ok": False, "note": f"read-back не удался: {exc}"}
     left = [g for g in goals if g.get("id") == goal_id]

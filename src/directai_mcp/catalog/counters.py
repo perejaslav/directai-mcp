@@ -440,9 +440,9 @@ async def _check_one(
     goal_names_all: dict[str, str] = {}
     for counter_id in inspect:
         try:
-            info = await counter_info(ctx.token, counter_id)
-            gtypes = await counter_goal_types(ctx.token, counter_id)
-            gnames = await counter_goal_names(ctx.token, counter_id)
+            info = await counter_info(ctx.metrika_read_token(), counter_id)
+            gtypes = await counter_goal_types(ctx.metrika_read_token(), counter_id)
+            gnames = await counter_goal_names(ctx.metrika_read_token(), counter_id)
         except MetrikaError as e:
             lines.append(f"⚠ счётчик {counter_id}: {e}")
             continue
@@ -547,7 +547,7 @@ async def _check_one(
     visit_rows: list[dict] = []
     for counter_id in inspect:
         try:
-            stat = await stat_visits(ctx.token, counter_id,
+            stat = await stat_visits(ctx.metrika_read_token(), counter_id,
                                      params.date_from, params.date_to, cid)
         except MetrikaError as e:
             lines.append(f"⚠ визиты {counter_id}: {e}")
@@ -585,7 +585,9 @@ async def _check_one(
     sites = set()
     for counter_id in counter_ids:
         try:
-            site = (await counter_info(ctx.token, counter_id)).get("site") or ""
+            site = (await counter_info(
+                ctx.metrika_read_token(), counter_id
+            )).get("site") or ""
         except MetrikaError:
             continue
         if site:
@@ -667,9 +669,9 @@ async def _goals(ctx: Ctx, params: BaseModel) -> str:
     for entry in entries:
         for counter_id in counters.get(entry.login, []):
             try:
-                info = await counter_info(ctx.token, counter_id)
-                gtypes = await counter_goal_types(ctx.token, counter_id)
-                gnames = await counter_goal_names(ctx.token, counter_id)
+                info = await counter_info(ctx.metrika_read_token(), counter_id)
+                gtypes = await counter_goal_types(ctx.metrika_read_token(), counter_id)
+                gnames = await counter_goal_names(ctx.metrika_read_token(), counter_id)
             except MetrikaError as e:
                 errors.append(f"⚠ счётчик {counter_id}: {e}")
                 continue

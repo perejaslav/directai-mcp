@@ -8,6 +8,7 @@ import pytest
 import directai_mcp.catalog.stats as _s  # noqa: F401 (реестр)
 from directai_mcp.catalog.metrika_goals import (
     COUNTER_GOALS_CACHE,
+    cache_scope,
     metrika_type_to_value,
     resolve_value_types,
 )
@@ -37,6 +38,11 @@ def _ctx(tmp_path, **kw):
         **kw,
     )
     return Ctx(settings=settings, token="t", data_dir=tmp_path)
+
+
+def _key(ctx):
+    """Ключ кеша целей (v1.17.1: токен Метрики или токен Директа)."""
+    return (cache_scope(ctx.metrika_read_token()), 99)
 
 
 def _tsv(body):
@@ -83,7 +89,8 @@ def test_metrika_type_mapping():
 async def test_resolve_metrika_and_cache(respx_mock, tmp_path):
     respx_mock.post(V501C).mock(return_value=_ok({
         "Campaigns": [{"Id": 7, "TextCampaign": {"CounterIds": {"Items": [99]}}}]}))
-    COUNTER_GOALS_CACHE[99] = {"1": "cdp_order_paid", "2": "action"}
+    ctx = _ctx(tmp_path)
+    COUNTER_GOALS_CACHE[_key(ctx)] = {"1": "cdp_order_paid", "2": "action"}
     try:
         ctx = _ctx(tmp_path)
         types, source = await resolve_value_types(
@@ -96,7 +103,7 @@ async def test_resolve_metrika_and_cache(respx_mock, tmp_path):
             ctx, [AccountEntry(alias="m", login="agency-login")], [7], ["1"])
         assert types2 == {"1": "crm"}
     finally:
-        COUNTER_GOALS_CACHE.pop(99, None)
+        COUNTER_GOALS_CACHE.pop(_key(ctx), None)
 
 
 async def test_resolve_fallback_toml(respx_mock, tmp_path):
@@ -170,9 +177,9 @@ async def test_mixed_goals_no_revenue_total(respx_mock, tmp_path):
         side_effect=[_tsv(DETAIL), _tsv(AGG), _tsv(RECONC)])
     respx_mock.post(V501C).mock(return_value=_ok({
         "Campaigns": [{"Id": 7, "TextCampaign": {"CounterIds": {"Items": [99]}}}]}))
-    COUNTER_GOALS_CACHE[99] = {"9": "cdp_order_paid", "1": "action"}
+    ctx = _ctx(tmp_path)
+    COUNTER_GOALS_CACHE[_key(ctx)] = {"9": "cdp_order_paid", "1": "action"}
     try:
-        ctx = _ctx(tmp_path)
         out = await ACTIONS["stats_campaigns"].run(
             ctx, ACTIONS["stats_campaigns"].params(
                 account="agency-login", campaign_ids=[7], goals=["9", "1"],
@@ -184,7 +191,7 @@ async def test_mixed_goals_no_revenue_total(respx_mock, tmp_path):
         assert "Выручка CRM:" not in out.split("Итого:")[1].split(".")[0]
         assert "типы: metrika" in out
     finally:
-        COUNTER_GOALS_CACHE.pop(99, None)
+        COUNTER_GOALS_CACHE.pop(_key(ctx), None)
 
 
 async def test_crm_only_revenue_total_label(respx_mock, tmp_path):
@@ -197,9 +204,9 @@ async def test_crm_only_revenue_total_label(respx_mock, tmp_path):
         side_effect=[_tsv(detail), _tsv(AGG), _tsv(RECONC)])
     respx_mock.post(V501C).mock(return_value=_ok({
         "Campaigns": [{"Id": 7, "TextCampaign": {"CounterIds": {"Items": [99]}}}]}))
-    COUNTER_GOALS_CACHE[99] = {"9": "cdp_order_paid", "8": "cdp_order_paid"}
+    ctx = _ctx(tmp_path)
+    COUNTER_GOALS_CACHE[_key(ctx)] = {"9": "cdp_order_paid", "8": "cdp_order_paid"}
     try:
-        ctx = _ctx(tmp_path)
         out = await ACTIONS["stats_campaigns"].run(
             ctx, ACTIONS["stats_campaigns"].params(
                 account="agency-login", campaign_ids=[7], goals=["9", "8"],
@@ -207,4 +214,4 @@ async def test_crm_only_revenue_total_label(respx_mock, tmp_path):
         assert "Выручка CRM: 3 193 145.20 ₽" in out
         assert "Ценность целей (условная)" not in out
     finally:
-        COUNTER_GOALS_CACHE.pop(99, None)
+        COUNTER_GOALS_CACHE.pop(_key(ctx), None)
