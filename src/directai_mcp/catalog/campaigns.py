@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from directai_mcp.api.errors import DirectError
 from directai_mcp.catalog.common import (
@@ -1004,6 +1005,96 @@ class CampaignsCreateParams(GetActionParams):
     counter_ids: list[int] = Field(default_factory=list)
 
 
+class PriorityGoal(BaseModel):
+    """Ключевая цель кампании — элемент PriorityGoals (docs campaigns/update).
+
+    Формат API: PriorityGoalsUpdateItem = GoalId, Value (обязательные),
+    Operation (обязательное, сейчас только SET), IsMetrikaSourceOfValue
+    (необязательное). Value — валюта × 1 000 000, наружу отдаём в ₽.
+    """
+
+    goal_id: int = Field(
+        gt=0,
+        description=("GoalId — идентификатор цели Метрики; 12 = вовлечённые "
+                     "сессии (служебная). Список целей — metrika_goals_list."),
+    )
+    value_rub: float = Field(
+        gt=0,
+        description=("Ценность конверсии в рублях (для MaxProfit — маржа с "
+                     "конверсии). В API уходит в микро-единицах: ₽ × 1 000 000."),
+    )
+    is_metrika_source_of_value: bool = Field(
+        default=False,
+        description=("Источник ценности — цель Метрики (YES). API принимает "
+                     "только для AVERAGE_CRR / PAY_FOR_CONVERSION_CRR."),
+    )
+
+
+#: Ключи параметров пакетной стратегии (нормализация — как в guard).
+_PACKAGE_GOAL_KEYS = frozenset({"packagestrategy", "packagestrategyid"})
+
+
+def _rub_to_micros(value: float) -> int:
+    """₽ -> Value в API (микро-единицы: валюта × 1 000 000), без float."""
+    micros = int(Decimal(str(value)) * 1_000_000)
+    if micros <= 0:
+        raise ValueError(
+            f"value_rub={value} — меньше 1 000 000 микро-единиц; ценность "
+            "цели в API нулевой быть не может."
+        )
+    return micros
+
+
+def _goal_item(goal: PriorityGoal | dict) -> dict:
+    """PriorityGoals.Items для campaigns/update (Operation всегда SET).
+
+    Принимает и модель, и её дамп (params плана в read-back) — формат один.
+    """
+    gid = goal["goal_id"] if isinstance(goal, dict) else goal.goal_id
+    rub = (goal["value_rub"] if isinstance(goal, dict) else goal.value_rub)
+    metrika = (
+        goal.get("is_metrika_source_of_value")
+        if isinstance(goal, dict)
+        else goal.is_metrika_source_of_value
+    )
+    return {
+        "GoalId": int(gid),
+        "Value": _rub_to_micros(float(rub)),
+        "Operation": "SET",
+        "IsMetrikaSourceOfValue": "YES" if metrika else "NO",
+    }
+
+
+def _goal_keys(items: list[dict]) -> set[tuple]:
+    """Ключи (GoalId, Value, IsMetrikaSourceOfValue) для сверки read-back."""
+    return {
+        (int(i.get("GoalId")), int(i.get("Value")),
+         str(i.get("IsMetrikaSourceOfValue") or ""))
+        for i in items
+        if isinstance(i, dict) and i.get("GoalId") is not None
+    }
+
+
+def _goals_of(item: dict) -> list[dict]:
+    """PriorityGoals.Items из ответа Campaigns.get (для body кампании)."""
+    raw = (_block(item) or {}).get("PriorityGoals")
+    items = raw.get("Items") if isinstance(raw, dict) else None
+    return [i for i in (items or []) if isinstance(i, dict)]
+
+
+def _check_goal_ids(goals: list[PriorityGoal]) -> None:
+    seen: dict[int, int] = {}
+    for g in goals:
+        seen[g.goal_id] = seen.get(g.goal_id, 0) + 1
+    dups = sorted(gid for gid, count in seen.items() if count > 1)
+    if dups:
+        raise ValueError(
+            "priority_goals: повторяется goal_id "
+            + ", ".join(str(d) for d in dups)
+            + " — набор ключевых целей уникален по GoalId."
+        )
+
+
 class CampaignsUpdateParams(GetActionParams):
     campaign_ids: list[int] = Field(min_length=1)
     end_date: str | None = None
@@ -1022,6 +1113,55 @@ class CampaignsUpdateParams(GetActionParams):
     name: str | None = None
     daily_budget: float | None = Field(default=None, gt=0)
     daily_budget_mode: Literal["STANDARD", "DISTRIBUTED"] = "STANDARD"
+    # v1.16.0: ключевые цели (PriorityGoals). Режим один — «заменить набор
+    # целиком» (в API Operation=SET); сброс набора (PriorityGoals=null) —
+    # только явным флагом. Guard: класс «стратегии» (см. safety/guard.py).
+    priority_goals: list[PriorityGoal] | None = Field(
+        default=None,
+        description=("Ключевые цели и их ценности в рублях; набор "
+                     "заменяется целиком. Пустой список без флага "
+                     "priority_goals_reset отклоняется."),
+    )
+    priority_goals_reset: bool = Field(
+        default=False,
+        description=("Явный сброс набора ключевых целей (в API "
+                     "PriorityGoals=null → вовлечённые сессии). Вместе с "
+                     "priority_goals использовать нельзя."),
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _goals_rules(cls, data: object) -> object:
+        """v1.16.0: два правила до любого сетевого вызова.
+
+        1) Сброс и новый набор — вместе нельзя.
+        2) Как в API: ключевые цели нельзя передавать с пакетной стратегией.
+        Ключи пакетной стратегии сверяются по сырым параметрам: модель их
+        отбрасывает (extra=ignore), а молчаливый игнор хуже отказа.
+        """
+        if not isinstance(data, dict):
+            return data
+        goals = data.get("priority_goals")
+        reset = bool(data.get("priority_goals_reset"))
+        if goals is not None and reset:
+            raise ValueError(
+                "priority_goals и priority_goals_reset вместе нельзя: либо "
+                "новый набор целей, либо явный сброс."
+            )
+        if goals is None and not reset:
+            return data
+        hit = sorted(
+            str(k) for k in data
+            if str(k).lower().replace("_", "") in _PACKAGE_GOAL_KEYS
+        )
+        if hit:
+            raise ValueError(
+                "ключевые цели нельзя передавать вместе с пакетной стратегией "
+                f"({', '.join(hit)}) — так же и в API (docs campaigns/update). "
+                "Сначала отвяжите кампанию: PackageBiddingStrategy=null и новая "
+                "BiddingStrategy."
+            )
+        return data
 
 
 def _today() -> str:
@@ -1204,10 +1344,23 @@ async def _prepare_campaigns_update(
             "Amount": round(params.daily_budget * 1_000_000),
             "Mode": params.daily_budget_mode,
         }
+    goals_wanted = params.priority_goals is not None
+    goals_reset = params.priority_goals_reset
+    if goals_wanted:
+        if not params.priority_goals:
+            raise ValueError(
+                "priority_goals: пустой список — только явный сброс "
+                "priority_goals_reset=true (в API это PriorityGoals=null)."
+            )
+        _check_goal_ids(params.priority_goals)
+        given["_priority_goals"] = [_goal_item(g) for g in params.priority_goals]
+    elif goals_reset:
+        given["_priority_goals_null"] = True
     if not given:
         raise ValueError(
             "укажите end_date, negatives, strategy, excluded_sites, "
-            "tracking_params, name или daily_budget.")
+            "tracking_params, name, daily_budget, priority_goals "
+            "или priority_goals_reset.")
     client = ctx.direct()
     try:
         found = await client.get_all(
@@ -1217,8 +1370,12 @@ async def _prepare_campaigns_update(
                 # v1.8.0: Type через v501 (v5 отдаёт устаревший TEXT_CAMPAIGN
                 # для ЕПК) — для выбора блока стратегии и версии запроса.
                 "FieldNames": ["Id", "Name", "Type", "ExcludedSites", "DailyBudget"],
-                "TextCampaignFieldNames": ["BiddingStrategy"],
-                "UnifiedCampaignFieldNames": ["BiddingStrategy"],
+                # v1.16.0: ключевые цели и пакетная стратегия — из того же
+                # чтения (лишний запрос платить баллами нельзя).
+                "TextCampaignFieldNames": ["BiddingStrategy", "PriorityGoals",
+                                           "PackageBiddingStrategy"],
+                "UnifiedCampaignFieldNames": ["BiddingStrategy", "PriorityGoals",
+                                              "PackageBiddingStrategy"],
             },
             entry.login,
             "Campaigns",
@@ -1237,6 +1394,22 @@ async def _prepare_campaigns_update(
         raise ValueError(
             f"неизвестный тип кампаний {unknown} — обновление отклонено до API.")
     use_v501 = any(types[c] == "UNIFIED_CAMPAIGN" for c in params.campaign_ids)
+    if goals_wanted or goals_reset:
+        # docs campaigns/update: при заполненном PackageBiddingStrategy нельзя
+        # передавать BiddingStrategy, PriorityGoals, CounterIds,
+        # AttributionModel. Привязанную кампанию надо сначала отвязать.
+        bound: list[str] = []
+        for item in found:
+            pack = (_block(item) or {}).get("PackageBiddingStrategy")
+            if isinstance(pack, dict):
+                bound.append(f"{int(item['Id'])} (стратегия {pack.get('StrategyId')})")
+        if bound:
+            raise ValueError(
+                "ключевые цели нельзя передавать кампании в пакетной стратегии: "
+                + ", ".join(bound)
+                + ". Сначала отвяжите кампанию (PackageBiddingStrategy=null "
+                "и новая BiddingStrategy) — DirectAI этого пока не делает."
+            )
     if params.excluded_sites is not None:
         # Добавление к существующим (валидация из campaigns/update:
         # ≤1000 элементов, элемент ≤255 символов).
@@ -1289,6 +1462,16 @@ async def _prepare_campaigns_update(
     if params.excluded_sites is not None:
         for body in bodies:
             body["ExcludedSites"] = {"Items": given["_excluded_merged"][body["Id"]]}
+    if goals_wanted or goals_reset:
+        # Набор целей заменяется целиком: сброс — PriorityGoals=null.
+        for body in bodies:
+            block = ("UnifiedCampaign" if types[body["Id"]] == "UNIFIED_CAMPAIGN"
+                     else "TextCampaign")
+            body[block] = {
+                **(body.get(block) or {}),
+                "PriorityGoals": ({"Items": given["_priority_goals"]}
+                                  if goals_wanted else None),
+            }
     desc = []
     warnings: list[str] = list(track_warnings)
     if params.name is not None:
@@ -1321,6 +1504,26 @@ async def _prepare_campaigns_update(
         for cid in params.campaign_ids:
             excl_desc[cid] = (
                 f"исключения площадок: {given['_excluded_preview'][cid]}")
+    goals_desc: dict[int, str] = {}
+    if goals_wanted or goals_reset:
+        names_map = ctx.settings.goal_names or {}
+        counters_map = ctx.settings.goal_counters or None
+        if goals_wanted:
+            after_goals = _fmt_goals(
+                {"PriorityGoals": {"Items": given["_priority_goals"]}},
+                names_map, counters_map,
+            )
+        else:
+            after_goals = "набор сброшен (PriorityGoals=null) → вовлечённые сессии"
+        for item in found:
+            cid = int(item["Id"])
+            goals_desc[cid] = (
+                "ключевые цели: "
+                f"{_fmt_goals(_block(item) or {}, names_map, counters_map)}"
+                f" → {after_goals}"
+            )
+        if params.strategy is None:
+            warnings.append("Смена стратегии/целей сбрасывает обучение кампании.")
     if params.strategy is not None:
         desc.append("стратегия обновлена")
         warnings.append("Смена стратегии/целей сбрасывает обучение кампании.")
@@ -1344,7 +1547,8 @@ async def _prepare_campaigns_update(
                 )
     lines = [f"{names[cid]} ({cid}): " + "; ".join(
         desc + ([excl_desc[cid]] if cid in excl_desc else [])
-        + ([budget_desc[cid]] if cid in budget_desc else []))
+        + ([budget_desc[cid]] if cid in budget_desc else [])
+        + ([goals_desc[cid]] if cid in goals_desc else []))
         for cid in params.campaign_ids]
     return {
         "before": names,
@@ -1360,6 +1564,14 @@ async def _verify_campaigns_updated(ctx: Ctx, entry: AccountEntry, plan) -> dict
 
     params = plan.params
     assert isinstance(params, dict)
+    # v1.16.0: читаем той же версией, что и запись (v5 отдаёт ЕПК как
+    # TEXT_CAMPAIGN — ключевые цели лежали бы не в том блоке).
+    requests = getattr(plan, "requests", None) or []
+    version = str(requests[0][3]) if requests and len(requests[0]) > 3 else "v5"
+    want_goals = params.get("priority_goals")
+    want_reset = bool(params.get("priority_goals_reset"))
+    goals_checked = want_goals is not None or want_reset
+    want_keys = _goal_keys([_goal_item(g) for g in want_goals]) if want_goals else set()
 
     def _check(current: dict) -> list[str]:
         bad: list[str] = []
@@ -1394,6 +1606,13 @@ async def _verify_campaigns_updated(ctx: Ctx, entry: AccountEntry, plan) -> dict
                 want_amount = round(params["daily_budget"] * 1_000_000)
                 if amount != want_amount:
                     bad.append(f"{cid}.DailyBudget: {amount!r}")
+            if goals_checked:
+                got_keys = _goal_keys(_goals_of(cur))
+                if got_keys != want_keys:
+                    bad.append(
+                        f"{cid}.priority_goals: "
+                        f"{sorted((g, v) for g, v, _ in got_keys)}"
+                    )
         return bad
 
     async def _read() -> dict:
@@ -1405,9 +1624,12 @@ async def _verify_campaigns_updated(ctx: Ctx, entry: AccountEntry, plan) -> dict
                     "SelectionCriteria": {"Ids": params["campaign_ids"]},
                     "FieldNames": ["Id", "Name", "EndDate", "NegativeKeywords",
                                    "ExcludedSites", "DailyBudget"],
+                    "TextCampaignFieldNames": ["PriorityGoals"],
+                    "UnifiedCampaignFieldNames": ["PriorityGoals"],
                 },
                 entry.login,
                 "Campaigns",
+                version,
             )
         finally:
             await client.aclose()
@@ -1420,6 +1642,20 @@ async def _verify_campaigns_updated(ctx: Ctx, entry: AccountEntry, plan) -> dict
         await _asyncio.sleep(10)
         current = await _read()
         bad = _check(current)
+    note = "подтверждено read-back."
+    if goals_checked:
+        names_map = ctx.settings.goal_names or {}
+        counters_map = ctx.settings.goal_counters or None
+        parts = []
+        for cid in params["campaign_ids"]:
+            text_goals = (
+                "набор отсутствует"
+                if want_reset
+                else _fmt_goals(_block(current.get(cid, {})) or {},
+                                names_map, counters_map)
+            )
+            parts.append(f"{cid}: {text_goals}")
+        note += " Ключевые цели после записи — " + "; ".join(parts) + "."
     if bad:
         return {
             "after": {k: v.get("EndDate") for k, v in current.items()},
@@ -1429,18 +1665,21 @@ async def _verify_campaigns_updated(ctx: Ctx, entry: AccountEntry, plan) -> dict
     return {
         "after": {k: v.get("EndDate") for k, v in current.items()},
         "ok": True,
-        "note": "подтверждено read-back.",
+        "note": note,
     }
 
 
 write_action(
     "campaigns_update",
     "Изменение кампаний: даты, минусы, исключения площадок, tracking_params, "
-    "имя, дневной бюджет, стратегия (бюджет/стратегия/имя — по политике guard: "
+    "имя, дневной бюджет, стратегия, ключевые цели (priority_goals — "
+    "ценности в ₽, набор заменяется целиком; сброс — priority_goals_reset) "
+    "(бюджет/стратегия/цели/имя — по политике guard: "
     "block — запрет, confirm — опасная операция с owner_confirmed; "
     "ENABLE_AREA_OF_INTEREST_TARGETING только читается — запись отклоняется)",
     ("изменить кампанию", "campaigns", "update", "настройки кампании",
-     "исключить площадки", "excluded"),
+     "исключить площадки", "excluded", "ключевые цели", "цели кампании",
+     "ценность конверсии", "priority goals"),
     CampaignsUpdateParams,
     prepare=_prepare_campaigns_update,
     apply=lambda ctx, entry, plan: _apply_batch_campaigns(ctx, entry, plan),

@@ -25,6 +25,10 @@ RENAME_BLOCK = "переименование существующей кампа
 RENAME_CONFIRM = "переименование кампании"
 MODERATE_BLOCK = "модерация запрещена в режиме защиты."
 MODERATE_CONFIRM = "отправка на модерацию (после неё начинаются показы)"
+# v1.16.0: ключевые цели (PriorityGoals) — вход стратегии и оптимизации,
+# поэтому класс «стратегии»: в block — запрет, в confirm — опасная причина.
+GOALS_BLOCK = "изменение ключевых целей кампании запрещено при защите."
+GOALS_CONFIRM = "изменение ключевых целей (ценностей конверсий) кампании"
 
 # Запись в Аудитории выключена по умолчанию (мёрж feat/audience-api в main):
 # включается только явным [audience] write_enabled=true. Текст — в стиле
@@ -483,7 +487,9 @@ def combat_allowed(action: str, params: dict) -> bool:
             and params.get("strategy") is None \
             and params.get("tracking_params") is None \
             and params.get("name") is None \
-            and params.get("daily_budget") is None
+            and params.get("daily_budget") is None \
+            and params.get("priority_goals") is None \
+            and not params.get("priority_goals_reset")
     if action == "adgroups_update":
         groups = params.get("groups") or []
         if not groups:
@@ -512,6 +518,11 @@ def precheck(action: str, params: dict) -> str | None:
     try:
         if action == "campaigns_update" and params.get("name") is not None:
             policy(RENAME_BLOCK, RENAME_CONFIRM)
+        if action == "campaigns_update" and (
+            params.get("priority_goals") is not None
+            or params.get("priority_goals_reset")
+        ):
+            policy(GOALS_BLOCK, GOALS_CONFIRM)
         if action == "ads_state" and params.get("operation") == "moderate":
             policy(MODERATE_BLOCK, MODERATE_CONFIRM)
         if is_budget_write(action, params):
@@ -589,6 +600,9 @@ async def check_write(
     if action == "campaigns_update":
         if params.get("name") is not None:
             policy(RENAME_BLOCK, RENAME_CONFIRM)
+        if params.get("priority_goals") is not None \
+                or params.get("priority_goals_reset"):
+            policy(GOALS_BLOCK, GOALS_CONFIRM)
         # v1.1.34: ExcludedSites add — можно в боевой; остальное — только TEST.
         if combat_allowed(action, params):
             return

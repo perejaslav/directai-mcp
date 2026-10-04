@@ -1,5 +1,41 @@
 # CHANGELOG
 
+## v1.16.0 (2026-10-04) — запись ключевых целей (PriorityGoals)
+
+- `campaigns_update`: явные типизированные поля `priority_goals`
+  (`[{goal_id, value_rub, is_metrika_source_of_value=false}]`) и
+  `priority_goals_reset`. `value_rub` — ценность конверсии в рублях,
+  внутри конвертируется в микро-единицы (`Decimal`, без float-ошибок).
+- Режим один — замена набора целиком (`Operation=SET`, как в API):
+  пустой список без флага отклоняется до API, `priority_goals_reset=true`
+  отправляет `PriorityGoals=null` (оптимизация на вовлечённые сессии);
+  оба параметра вместе нельзя. Повтор `goal_id`, `goal_id ≤ 0`,
+  `value_rub ≤ 0` — отказ до API.
+- Как в API, ключевые цели нельзя передавать кампании в пакетной стратегии:
+  конфликт ловится и по параметрам, и по живому `PackageBiddingStrategy`
+  кампании (тот же read, без лишнего запроса).
+- Guard: цели — класс «стратегии». Новый `GOALS_BLOCK`/`GOALS_CONFIRM`:
+  в `block` — запрет до API, в `confirm` — «⚠ ОПАСНАЯ ОПЕРАЦИЯ» и
+  `owner_confirmed=true`. В боевой кампании запрещено (в `combat_allowed`
+  учтён и сброс). Свойства плана (`plan_id`, TTL 15 минут,
+  `acknowledge_warnings`, `owner_confirmed`) не ослаблены.
+- Превью плана показывает цели и ценности «было → станет» (имена целей и
+  счётчики — из `goals.toml`); read-back перечитывает `PriorityGoals` и
+  сверяет `(GoalId, Value, IsMetrikaSourceOfValue)` с запрошенным, а
+  читает той же версией, что и запись (`v501` для ЕПК).
+- Чтение: `campaigns_get` уже отдавал `PriorityGoals` для `TEXT_CAMPAIGN`
+  и `UNIFIED_CAMPAIGN` (`Goals`) — добавлен регрессионный тест; типы
+  `DYNAMIC_TEXT_CAMPAIGN`/`SMART_CAMPAIGN` сервер по-прежнему не разбирает.
+- Документация: README §5.2 «Ключевые цели», §5/§6 (класс «стратегии»),
+  `docs/PUBLIC-OVERVIEW.md`, текст инструкций MCP и skill
+  `directai-workflow` (как менять ключевые цели).
+- Тесты: `tests/test_priority_goals.py` (22) — сериализация ₽ → микро,
+  валидация (пакетная стратегия, дубли `goal_id`, пустой набор), план с
+  before → after, read-back (совпало/не совпало/сброс), guard в обоих
+  режимах, полный цикл plan → apply → read-back. Полный pytest — 723 passed,
+  4 failed вне изменений (tests/test_v11_step2.py, `clients` не замокан);
+  ruff — чисто.
+
 ## v1.15.1 (2026-10-03) — формулировки confirm, журнал state-операций, метка версии
 
 - Режим `confirm`: причины опасной операции пишутся как «<что> — нужно
