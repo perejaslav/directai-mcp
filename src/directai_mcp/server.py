@@ -28,6 +28,7 @@ from directai_mcp.catalog import forecast as forecast_mod
 from directai_mcp.catalog import keywords as keywords_mod
 from directai_mcp.catalog import limits as limits_mod
 from directai_mcp.catalog import metrika_cpa as metrika_cpa_mod
+from directai_mcp.catalog import metrika_goal_write as metrika_goal_write_mod
 from directai_mcp.catalog import metrika_reports as metrika_reports_mod
 from directai_mcp.catalog import moderation as moderation_mod
 from directai_mcp.catalog import negatives as negatives_mod
@@ -55,6 +56,7 @@ _ACTION_MODULES = (
     forecast_mod,
     keywords_mod,
     metrika_cpa_mod,
+    metrika_goal_write_mod,
     metrika_reports_mod,
     moderation_mod,
     negatives_mod,
@@ -382,22 +384,35 @@ async def do_plan_write(ctx: Ctx, name: str, params: dict) -> str:
     from directai_mcp.safety.guard import (
         confirm_mode,
         finish_danger_collection,
+        finish_forced_collection,
         start_danger_collection,
+        start_forced_collection,
     )
 
-    if not confirm_mode(ctx):
-        return await _plan_write(ctx, name, params)
-    # v1.15.0: confirm — политические запреты копятся как опасные причины.
-    token = start_danger_collection()
+    # v1.17.0: причины, требующие owner_confirmed в любом режиме guard
+    # (удаление цели Метрики), собираются всегда.
+    forced = start_forced_collection()
     try:
-        return await _plan_write(ctx, name, params)
+        if not confirm_mode(ctx):
+            return await _plan_write(ctx, name, params)
+        # v1.15.0: confirm — политические запреты копятся как опасные причины.
+        token = start_danger_collection()
+        try:
+            return await _plan_write(ctx, name, params)
+        finally:
+            finish_danger_collection(token)
     finally:
-        finish_danger_collection(token)
+        finish_forced_collection(forced)
 
 
 async def _plan_write(ctx: Ctx, name: str, params: dict) -> str:
     from directai_mcp.api.errors import AudienceError, DirectError
-    from directai_mcp.safety.guard import _DANGER_SINK, DANGER_NOTICE, precheck
+    from directai_mcp.safety.guard import (
+        _DANGER_SINK,
+        DANGER_NOTICE,
+        forced_reasons,
+        precheck,
+    )
 
     if guard_active(ctx):
         hit = precheck(name, params)
@@ -452,7 +467,7 @@ async def _plan_write(ctx: Ctx, name: str, params: dict) -> str:
         if client is not None:
             await client.aclose()
     reasons: list[str] = []
-    for reason in _DANGER_SINK.get() or []:
+    for reason in list(forced_reasons()) + list(_DANGER_SINK.get() or []):
         if reason not in reasons:
             reasons.append(reason)
     plan = Plan(

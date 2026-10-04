@@ -68,6 +68,47 @@ class AudienceError(Exception):
         super().__init__(message)
 
 
+class MetrikaApiError(Exception):
+    """Метрика Management API: ошибка запроса. Токен не несёт.
+
+    ``unverified=True`` — обрыв связи/таймаут на записи: результат неизвестен,
+    повторять вслепую нельзя, нужен read-back.
+    """
+
+    def __init__(
+        self, message: str, status: int = 0, unverified: bool = False
+    ) -> None:
+        self.status = status
+        self.unverified = unverified
+        super().__init__(message)
+
+
+#: v1.17.0: подсказка про metrika:write. Токен не печатается и не читается —
+#: только инструкция, как перевыпустить токен с нужным правом.
+METRIKA_WRITE_SCOPE_HINT = (
+    "у токена нет права metrika:write (создание/изменение/удаление целей "
+    "Метрики). Перевыпустите токен: в приложении Яндекс ID откройте доступ "
+    "«Яндекс Метрика» и включите право metrika:write, затем у себя в "
+    "терминале выполните `directai-mcp set-token --login <ваш логин>` и "
+    "вставьте новый токен в скрытое поле. Токен в чат не пишите."
+)
+
+
+def metrika_hint(status: int) -> str:
+    if status == 401:
+        return (
+            "токен не принят Метрикой — перевыпустите: "
+            "`directai-mcp set-token --login <ваш логин>`"
+        )
+    if status == 403:
+        return METRIKA_WRITE_SCOPE_HINT
+    if status == 404:
+        return "счётчик или цель не найдены (проверьте counter_id / goal_id)"
+    if status == 409:
+        return "конфликт состояния цели"
+    return ""
+
+
 def audience_hint(status: int) -> str:
     if status == 401:
         return "токен не принят — перевыпустите: directai-mcp set-token --audience"

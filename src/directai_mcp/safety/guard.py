@@ -53,6 +53,14 @@ RETARGETING_WRITE_ACTIONS = frozenset({
     "audience_target_state",
 })
 
+#: v1.17.0: запись целей Метрики. Отдельный провайдер (Management API),
+#: поэтому здесь только проверка prepare + подтверждение удаления.
+METRIKA_GOAL_WRITE_ACTIONS = frozenset({
+    "metrika_goal_create",
+    "metrika_goal_update",
+    "metrika_goal_delete",
+})
+
 # Бюджетные ключи параметров (нормализация: нижний регистр без подчеркиваний).
 # Смена стратегии — тоже бюджетная операция (п.1 ТЗ): ключ strategy входит сюда.
 _BUDGET_KEYS = frozenset({
@@ -108,6 +116,37 @@ def finish_danger_collection(token: contextvars.Token) -> None:
 
 
 CONFIRM_SUFFIX = "нужно подтверждение владельца."
+
+#: v1.17.0: причины, требующие owner_confirmed в ЛЮБОМ режиме guard.
+#: Необратимые операции вне классов Direct (удаление цели Метрики) не имеют
+#: тестового префикса `[TEST DirectAI]*`, поэтому подтверждение владельца —
+#: единственный барьер. Собираются всегда, независимо от режима guard.
+_FORCED_SINK: contextvars.ContextVar[list[str] | None] = contextvars.ContextVar(
+    "directai_forced_sink", default=None
+)
+
+
+def start_forced_collection() -> contextvars.Token:
+    return _FORCED_SINK.set([])
+
+
+def finish_forced_collection(token: contextvars.Token) -> None:
+    _FORCED_SINK.reset(token)
+
+
+def forced_reasons() -> list[str]:
+    return list(_FORCED_SINK.get() or [])
+
+
+def require_owner_confirm(confirm: str) -> None:
+    """Требование подтверждения владельца в любом режиме guard.
+
+    Вне сбора причин (прямой вызов prepare в тестах) — отказ, а не запись.
+    """
+    sink = _FORCED_SINK.get()
+    if sink is None:
+        raise GuardBlocked(f"{confirm} — {CONFIRM_SUFFIX}.")
+    sink.append(f"{confirm} — {CONFIRM_SUFFIX}")
 
 
 def policy(message: str, confirm: str) -> None:
@@ -685,5 +724,11 @@ async def check_write(
             await _require_group(ctx, client, login, int(gid))
         return
     if action == "offline_conversions_upload":
+        return
+    if action in METRIKA_GOAL_WRITE_ACTIONS:
+        # v1.17.0: цели Метрики живут вне Директа — префикс `[TEST DirectAI]*`
+        # к счётчикам не относится. Проверки (право счётчика, дубль, лимит
+        # 200 целей) делает prepare по живым данным; удаление — причина для
+        # owner_confirmed (require_owner_confirm), а не блокировка.
         return
     raise GuardBlocked(f"действие {action} недоступно в режиме защиты.")
