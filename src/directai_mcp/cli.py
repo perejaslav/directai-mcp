@@ -446,6 +446,10 @@ def _probe_text(result) -> str:
 
 
 async def _probe_async(timeout: float) -> int:
+    from directai_mcp.log import quiet_http_logging
+
+    # v1.17.2: probe сам не конфигурирует логи (setup_logging — в check).
+    quiet_http_logging()
     from mcp import ClientSession
     from mcp.client.stdio import StdioServerParameters, stdio_client
 

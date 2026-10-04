@@ -26,6 +26,7 @@ from typing import Any
 import httpx
 
 from directai_mcp.api.errors import MetrikaApiError, metrika_hint
+from directai_mcp.log import redact
 
 METRIKA_BASE = "https://api-metrika.yandex.net"
 
@@ -92,8 +93,11 @@ async def _call(
             " Соединение оборвалось: результат записи неизвестен — не "
             "повторяйте вслепую, перечитайте цели счётчика." if write else ""
         )
+        # Текст сетевой ошибки у httpx иногда содержит URL — вычищаем на всякий
+        # случай (v1.17.2: секреты в текстах ошибок тоже недопустимы).
         raise MetrikaApiError(
-            f"сеть: {kind}: {exc or 'нет соединения'}.{tail}", unverified=write
+            f"сеть: {kind}: {redact(str(exc)) or 'нет соединения'}.{tail}",
+            unverified=write,
         ) from None
     if resp.status_code >= 300:
         raise _fail(resp.status_code, resp.text)
@@ -127,11 +131,17 @@ async def delete(token: str, path: str) -> Any:
 #: подтверждали, что Метрике достался именно токен приложения Метрики, а не
 #: Директа. Права (scopes) эндпоинт НЕ отдаёт — см. DECISIONS v1.17.1,
 #: поэтому «есть ли metrika:write» без записи не проверяется.
-OAUTH_INFO_URL = "https://login.yandex.ru/info?format=json&oauth_token={token}"
+#:
+#: SECURITY (v1.17.2): токен идёт ТОЛЬКО в заголовке `Authorization: OAuth`.
+#: В v1.17.1 он был в query (`?oauth_token=…`), и логгер httpx на уровне INFO
+#: писал полный URL в лог — токен утекал в `~/.directai/logs/directai.log`.
+#: Тот же эндпоинт принимает заголовок (проверено 04.10.2026: 200 и с
+#: `OAuth`, и с `Bearer`), поэтому query-параметр не нужен.
+OAUTH_INFO_URL = "https://login.yandex.ru/info?format=json"
 
 
 async def oauth_app_info(token: str) -> dict:
-    """client_id и login приложения, выпустившего токен (без токена в ответе).
+    """client_id и login приложения, выпустившего токен (без токена в URL).
 
     IPv4 принудительно — как во всех транспортах репозитория (TLS поверх
     IPv6 на login.yandex.ru рвётся, см. DECISIONS v1.2.4).
@@ -139,7 +149,9 @@ async def oauth_app_info(token: str) -> dict:
     transport = httpx.AsyncHTTPTransport(local_address="0.0.0.0")
     try:
         async with httpx.AsyncClient(timeout=15.0, transport=transport) as c:
-            resp = await c.get(OAUTH_INFO_URL.format(token=token))
+            resp = await c.get(
+                OAUTH_INFO_URL, headers={"Authorization": "OAuth " + token}
+            )
     except httpx.HTTPError as exc:
         return {"error": f"{type(exc).__name__}"}
     if resp.status_code != 200:

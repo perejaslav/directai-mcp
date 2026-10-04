@@ -806,6 +806,11 @@ def format_json(
 def cmd_doctor(
     json_output: bool = False, skip_api: bool = False, preinstall: bool = False
 ) -> int:
+    # v1.17.2: doctor сам настраивает логи (в нём нет вызова setup_logging),
+    # поэтому секретный фильтр и тихие HTTP-логгеры включаем явно.
+    from directai_mcp.log import quiet_http_logging
+
+    quiet_http_logging()
     results, code = run_doctor(skip_api=skip_api, preinstall=preinstall)
     if json_output:
         print(format_json(results, code, preinstall=preinstall))

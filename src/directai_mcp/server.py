@@ -695,7 +695,6 @@ def do_get_log(
 
 def run_server(sandbox: bool = False) -> None:
     setup_logging(data_dir())
-    logging.getLogger("httpx").setLevel(logging.WARNING)
     if os.environ.get("DIRECTAI_SANDBOX") == "1":
         sandbox = True
     build_server(sandbox).run(transport="stdio")
