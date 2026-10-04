@@ -24,8 +24,8 @@
 | Типы целей в интерфейсе | https://yandex.ru/support/metrica/ru/general/goals.html |
 | Мультицель (только интерфейс) | https://yandex.ru/support/metrica/ru/general/multi.html |
 
-Локальные копии страниц: `outputs/docs/addgoal.md`,
-`outputs/docs/editgoal_goals_auth.md`.
+Локальные копии страниц использовались только при сверке и в репозиторий не
+попадают — ссылки выше актуальные и достаточные для повторной проверки.
 
 ### 1.2. Методы
 
