@@ -212,6 +212,15 @@ Credential Manager (`directai-mcp`) или переменная `DIRECTAI_TOKEN`
 Порядок работы ИИ: `search_actions` → `describe_action` → `run_read`
 (чтение) или `plan_write` → показать вам → `apply_write` (запись).
 
+`describe_action` без имени (или с пустой строкой) — статус сервера, вызов
+бесплатный (API не тратится): `server_version` (что декларирует установка
+пакета, `importlib.metadata`), `code_version` (код, реально запущенный в
+процессе) и `disk_version` (исходники на диске). Если `code_version` ≠
+`disk_version` — блок предупреждения «перезапустите MCP-сервер»; если
+`server_version` ≠ `code_version` — «переустановите пакет»
+(`uv tool install --force --editable .`, README §7): у editable-установки
+метаданные обновляются только переустановкой, перезапуск сервера не поможет.
+
 Чтение (57):
 
 | Действие | Что делает |

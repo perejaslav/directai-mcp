@@ -1,6 +1,10 @@
-"""Шаг 1.1-2 step 2: discover/check кабинетов, кеш, all/active (SPEC-v1.1)."""
+"""Шаг 1.1-2 step 2: discover/check кабинетов, кеш, all/active (SPEC-v1.1).
 
+Даты кеша — относительно «сейчас» (issue #2): зашитая 2026-09-26 перестала
+быть свежей через неделю, и 4 теста начали делать незваный Clients.get.
+"""
 import json
+from datetime import datetime, timedelta
 
 import httpx
 
@@ -10,11 +14,22 @@ from directai_mcp.catalog.accounts import (
     ensure_cache,
 )
 from directai_mcp.catalog.registry import ACTIONS, Ctx, search
-from directai_mcp.config import AccountEntry, Settings, load_settings, resolve_account
+from directai_mcp.config import (
+    CACHE_STALE_DAYS,
+    AccountEntry,
+    Settings,
+    load_settings,
+    resolve_account,
+)
 
 V5C = "https://api.direct.yandex.com/json/v5/clients"
 V5A = "https://api.direct.yandex.com/json/v5/agencyclients"
 V501G = "https://api.direct.yandex.com/json/v501/campaigns"
+
+
+def _ago(**delta) -> str:
+    """Метка времени относительно «сейчас» — не хардкод."""
+    return (datetime.now().astimezone() - timedelta(**delta)).isoformat()
 
 
 def _ok(result):
@@ -48,7 +63,8 @@ def _ctx(tmp_path, **kw):
 
 def _cache(tmp_path, **kw):
     cache = {
-        "updated_at": kw.get("updated_at", "2026-09-26T10:00:00+03:00"),
+        # Свежий кеш — час назад: тест не должен зависеть от сегодняшней даты.
+        "updated_at": kw.get("updated_at", _ago(hours=1)),
         "method": "Clients.get → ManagedLogins",
         "manager": "agency-login",
         "logins": kw.get("logins", ["a-login", "b-login"]),
@@ -96,7 +112,8 @@ async def test_discover_blocker(respx_mock, tmp_path):
 
 
 async def test_stale_cache_refreshes(respx_mock, tmp_path):
-    _cache(tmp_path, updated_at="2026-09-10T10:00:00+03:00")
+    # Намеренно устаревший кеш: старше порога CACHE_STALE_DAYS.
+    _cache(tmp_path, updated_at=_ago(days=CACHE_STALE_DAYS + 2))
     route = respx_mock.post(V5C).mock(
         return_value=_ok(
             {"Clients": [{"Login": "agency-login", "ManagedLogins": ["a-login"]}]}

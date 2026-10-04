@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.metadata
 import re
 from collections.abc import Awaitable, Callable
 from decimal import Decimal
@@ -350,6 +351,77 @@ def staleness_warning() -> str | None:
 
 
 _GEO_CACHE: dict[str, list[dict]] = {}
+
+
+def package_version() -> str | None:
+    """Версия установленного пакета по метаданным (importlib.metadata).
+
+    Не исходники на диске: показывает, что декларирует установка. У
+    editable-установки метаданные обновляются только переустановкой пакета,
+    поэтому могут отставать от кода — это отдельное предупреждение в
+    server_status(), а не «перезапустите сервер».
+    """
+    try:
+        return importlib.metadata.version("directai-mcp")
+    except importlib.metadata.PackageNotFoundError:
+        return None
+
+
+def server_version_warnings(
+    code: str, disk: str | None, meta: str | None
+) -> list[str]:
+    """v1.16.1: расхождения версий запущенного сервера — по отдельности.
+
+    Аргументы передаются явно, чтобы версию пакета не искать дважды за вызов
+    (importlib.metadata сканирует sys.path на каждый `version`).
+    """
+    out: list[str] = []
+    code_v = _parse_version(code)
+    disk_v = _parse_version(disk) if disk else None
+    if disk and code_v is not None and disk_v is not None and disk_v != code_v:
+        out.append(
+            f"⚠ Запущенный код v{code}, на диске v{disk} — "
+            f"перезапустите MCP-сервер."
+        )
+    meta_v = _parse_version(meta) if meta else None
+    if meta and code_v is not None and meta_v is not None and meta_v != code_v:
+        out.append(
+            f"⚠ Метаданные установленного пакета: v{meta}, а код сервера: "
+            f"v{code} — переустановите пакет "
+            f"(uv tool install --force --editable .), перезапуск сервера "
+            f"не поможет."
+        )
+    return out
+
+
+def server_status() -> str:
+    """v1.16.1: блок версий для describe_action без аргументов."""
+    meta = package_version()
+    disk = on_disk_version()
+    lines = [
+        "DirectAI MCP: статус сервера (без вызова API).",
+        f"server_version (пакет, importlib.metadata): {meta or '—'}",
+        f"code_version (код, запущенный в этом процессе): {RUNNING_VERSION}",
+        f"disk_version (исходники на диске): {disk or '—'}",
+    ]
+    warnings = server_version_warnings(RUNNING_VERSION, disk, meta)
+    if warnings:
+        lines += ["", *warnings]
+    lines += [
+        "",
+        (
+            "Как читать: server_version — что декларирует установка пакета, "
+            "code_version — что реально выполняется, disk_version — что лежит "
+            "в исходниках. Расхождение code/disk лечится перезапуском "
+            "MCP-сервера, расхождение server_version/code — переустановкой "
+            "пакета."
+        ),
+        (
+            "Параметры и пример действия: describe_action('<имя_действия>'); "
+            "список имён: search_actions('')."
+        ),
+    ]
+    return "\n".join(lines)
 
 
 async def geo_regions(ctx: Ctx, tally: dict | None = None) -> list[dict]:

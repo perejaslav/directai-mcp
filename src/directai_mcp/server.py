@@ -261,8 +261,17 @@ def build_server(sandbox: bool = False) -> FastMCP:
         return "\n".join(parts)
 
     @mcp.tool()
-    def describe_action(name: str) -> str:
-        """Описание действия: параметры (JSON Schema), пример, ограничения."""
+    def describe_action(name: str | None = None) -> str:
+        """Описание действия: параметры (JSON Schema), пример, ограничения.
+
+        Без name (или с пустой строкой) — статус сервера: server_version
+        (пакет), code_version (запущенный код), disk_version (исходники) и
+        предупреждения, если они расходятся. Вызов не тратит API.
+        """
+        if not name:
+            from directai_mcp.catalog.common import server_status
+
+            return server_status()
         act = ACTIONS.get(name)
         if act is None:
             valid = ", ".join(sorted(ACTIONS))
