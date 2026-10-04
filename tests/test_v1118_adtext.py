@@ -212,8 +212,13 @@ async def test_file_output_has_raw_column(respx_mock, tmp_path):
     assert "BidModifier" in filed
 
 
-# --- правило истёкших планов ---
+# --- правило согласия на конкретный набор изменений ---
 
-def test_instructions_require_fresh_consent():
-    assert "новое превью" in INSTRUCTIONS
-    assert "по старому подтверждению запрещён" in INSTRUCTIONS
+def test_instructions_accept_exact_prior_consent():
+    assert "явное согласие пользователя на конкретный набор изменений" in INSTRUCTIONS
+    assert "последнее сообщение пользователя уже одобряет" in INSTRUCTIONS
+    assert "ровно эти объекты, кампании и значения" in INSTRUCTIONS
+    assert "apply_write без повторного вопроса" in INSTRUCTIONS
+    assert "При любых отличиях от одобренного — новое согласие" in INSTRUCTIONS
+    assert "Превью показывай всегда" in INSTRUCTIONS
+    assert "15 минут, истёкший план пересобирается" in INSTRUCTIONS
