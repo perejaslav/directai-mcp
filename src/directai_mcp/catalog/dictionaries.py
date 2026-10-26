@@ -33,7 +33,7 @@ class DictionariesGetParams(BaseModel):
     "read",
     (
         "Справочники: поиск региона по названию; dictionary=AudienceInterests — "
-        "интересы и привычки (name='*' — все)"
+        "интересы и привычки (name='*' — все; поиск по названию или Id из набора)"
     ),
     (
         "интересы",
@@ -121,28 +121,38 @@ async def _interests(
     finally:
         await client.aclose()
     interests = result.get("AudienceInterests") or []
-    by_key = {i.get("InterestKey"): i for i in interests}
+    # Id = 1/2/3 (SHORT_TERM/LONG_TERM/ANY) + InterestKey; ParentId ссылается на Id.
+    by_id = {i.get("Id"): i for i in interests}
+    ids_by_key: dict = {}
+    for item in interests:
+        ids_by_key.setdefault(item.get("InterestKey"), {})[item.get("InterestType")] = item.get("Id")
     query = params.name.strip().lower()
 
     def path(item: dict) -> str:
         names, seen = [], set()
-        while item and item.get("InterestKey") not in seen:
-            seen.add(item.get("InterestKey"))
+        while item and item.get("Id") not in seen:
+            seen.add(item.get("Id"))
             names.append(str(item.get("Name", "")))
-            item = by_key.get(item.get("ParentId"))
+            item = by_id.get(item.get("ParentId"))
         return " → ".join(reversed(names))
 
     rows = []
     for item in interests:
+        if item.get("InterestType") != "ANY":
+            continue
+        ids = ids_by_key[item.get("InterestKey")]
         full = path(item)
-        if query != "*" and query not in full.lower():
+        haystack = " ".join([full.lower(), *map(str, ids.values())])
+        if query != "*" and query not in haystack:
             continue
         rows.append(
             {
                 "InterestKey": item.get("InterestKey"),
                 "Путь": full,
-                "Тип": item.get("InterestType"),
-                "Можно выбрать": item.get("IsTargetable"),
+                "Id краткоср.": ids.get("SHORT_TERM") or "—",
+                "Id долгоср.": ids.get("LONG_TERM") or "—",
+                "Id любой": ids.get("ANY") or "—",
+                "Описание": item.get("Description") or "—",
             }
         )
     rows.sort(key=lambda r: r["Путь"])
@@ -154,7 +164,7 @@ async def _interests(
         ctx,
         context,
         "dictionaries_get",
-        ["InterestKey", "Путь", "Тип", "Можно выбрать"],
+        ["InterestKey", "Путь", "Id краткоср.", "Id долгоср.", "Id любой", "Описание"],
         rows,
         params.limit,
         params.save_as,
