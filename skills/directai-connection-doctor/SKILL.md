@@ -1,6 +1,8 @@
 ---
 name: "directai-connection-doctor"
 description: "Диагностика подключения Direct AI MCP: directai-mcp doctor --json, разбор и один готовый блок PowerShell для починки. Триггеры: MCP не работает, os error 32, Hermes не видит сервер, коды 513/58/53."
+metadata:
+  directai_mcp: "1.17.2"
 ---
 
 # DirectAI Connection Doctor
@@ -17,11 +19,15 @@ description: "Диагностика подключения Direct AI MCP: direc
 1. Запустить `directai-mcp doctor --json` (без сети — с `--skip-api`).
 2. Разобрать JSON: поле `overall` (`ok`/`warn`/`fail`), массив `checks`
    (id a–i, `status` OK/WARN/FAIL, `detail`, `hint`).
-3. Найти первую проверку со статусом FAIL, иначе первую с WARN.
-4. Открыть `references/playbooks.md`, взять рецепт под эту проверку.
-5. Выдать пользователю ОДИН готовый блок PowerShell целиком.
-6. Дождаться результата, дальше — по новому выводу doctor.
-7. Перед переустановкой — строгая проверка `doctor --preinstall`
+3. Сверить версии: `powershell -ExecutionPolicy Bypass -File scripts/check-versions.ps1`.
+   Скрипт читает `metadata.directai_mcp` из скиллов семейства и сравнивает с
+   `directai-mcp --version`. `WARN` — сервер новее скиллов, перед записью
+   перепроверить `describe_action`; `FAIL` — сервер старее, write не выполнять.
+4. Найти первую проверку со статусом FAIL, иначе первую с WARN.
+5. Открыть `references/playbooks.md`, взять рецепт под эту проверку.
+6. Выдать пользователю ОДИН готовый блок PowerShell целиком.
+7. Дождаться результата, дальше — по новому выводу doctor.
+8. Перед переустановкой — строгая проверка `doctor --preinstall`
    (c → WARN, d → FAIL); в обычном режиме занятый exe — INFO, не тревога.
 
 ## Правила
@@ -35,6 +41,9 @@ description: "Диагностика подключения Direct AI MCP: direc
 - Если doctor не запускается вовсе (exe сломан) — fallback-проверки вручную:
   `(Get-Command directai-mcp).Source`, список процессов, наличие
   `%USERPROFILE%\.directai\accounts.toml` — тоже одним блоком.
+- Версия сервера и версия в скиллах — разные вещи. Проверка версий не отменяет
+  doctor: сначала врач, потом сверка. Расхождение версий — это warning о
+  качестве данных, а не поломка подключения.
 
 ## Коды Direct API (кратко, полные рецепты — в playbooks)
 

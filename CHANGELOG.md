@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## Unreleased — скиллы: сверка версий, единый источник
+
+- `directai-connection-doctor`: шаг сверки версий в порядке работы,
+  `scripts/check-versions.ps1` (читает `metadata.directai_mcp`, сравнивает
+  с `directai-mcp --version`, коды 0/2/1), playbook на WARN и FAIL.
+- Все скиллы семейства объявляют `metadata.directai_mcp: "1.17.2"`.
+- `directai-campaign-audit` догнал локальную v2.0: `scripts/auditlib/`,
+  тесты (198), примеры, реестр действий `references/tool-contract.md`.
+  Раньше в репозитории лежала тонкая версия на 3 файла.
+- `directai-campaign-create`: убрана ссылка на несуществующую пару скиллов
+  «v1.11»; правило про сверку версии перед первым `plan_write`.
+- `playbooks.md`: ссылка на `examples/harness-configs.md` помечена как путь
+  репозитория — рядом с установленным скиллом этой папки нет.
+
 ## v1.17.2 (2026-10-04) — Security: токен Директа не попадает в лог
 
 ### Security

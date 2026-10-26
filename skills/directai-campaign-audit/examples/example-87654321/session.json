@@ -1,0 +1,233 @@
+{
+  "schema_version": "2.0",
+  "account": "example",
+  "account_login": "example-agency",
+  "campaign_id": "87654321",
+  "modes": [
+    "deep"
+  ],
+  "periods": {
+    "a": {
+      "from": "2026-09-26",
+      "to": "2026-10-09"
+    },
+    "b": {
+      "from": "2026-09-12",
+      "to": "2026-09-25"
+    }
+  },
+  "goal": {
+    "id": "11111111",
+    "label": "Заявка с сайта",
+    "source": "campaign"
+  },
+  "attribution": {
+    "requested": "AUTO",
+    "effective": "AUTO",
+    "source": "config"
+  },
+  "thresholds": {},
+  "product": {
+    "what": "окна ПВХ под ключ, замер и монтаж",
+    "exclude_terms": [
+      "вакансии"
+    ],
+    "protected_terms": [
+      "цена",
+      "отзывы",
+      "обзор"
+    ]
+  },
+  "economics": {
+    "revenue_rub": 250000,
+    "gross_margin_rub": 90000
+  },
+  "sources": [
+    {
+      "file": "stats_compare.json",
+      "action": "stats_compare",
+      "params": {
+        "campaign_ids": [
+          87654321
+        ]
+      },
+      "status": "ok",
+      "pagination_complete": true,
+      "truncated": false
+    },
+    {
+      "file": "campaigns_get.json",
+      "action": "campaigns_get",
+      "params": {
+        "campaign_ids": [
+          87654321
+        ]
+      },
+      "status": "ok",
+      "pagination_complete": true,
+      "truncated": false
+    },
+    {
+      "file": "stats_adgroups.json",
+      "action": "stats_adgroups",
+      "params": {
+        "campaign_ids": [
+          87654321
+        ]
+      },
+      "status": "ok",
+      "pagination_complete": true,
+      "truncated": false
+    },
+    {
+      "file": "stats_keywords.json",
+      "action": "stats_keywords",
+      "params": {
+        "campaign_ids": [
+          87654321
+        ]
+      },
+      "status": "ok",
+      "pagination_complete": true,
+      "truncated": false
+    },
+    {
+      "file": "stats_search_queries.json",
+      "action": "stats_search_queries",
+      "params": {
+        "campaign_ids": [
+          87654321
+        ]
+      },
+      "status": "ok",
+      "pagination_complete": true,
+      "truncated": false
+    },
+    {
+      "file": "stats_placements.json",
+      "action": "stats_placements",
+      "params": {
+        "campaign_ids": [
+          87654321
+        ]
+      },
+      "status": "ok",
+      "pagination_complete": true,
+      "truncated": false
+    },
+    {
+      "file": "stats_devices.json",
+      "action": "stats_devices",
+      "params": {
+        "campaign_ids": [
+          87654321
+        ]
+      },
+      "status": "ok",
+      "pagination_complete": true,
+      "truncated": false
+    },
+    {
+      "file": "stats_regions.json",
+      "action": "stats_regions",
+      "params": {
+        "campaign_ids": [
+          87654321
+        ]
+      },
+      "status": "ok",
+      "pagination_complete": true,
+      "truncated": false
+    },
+    {
+      "file": "stats_ads.json",
+      "action": "stats_ads",
+      "params": {
+        "campaign_ids": [
+          87654321
+        ]
+      },
+      "status": "ok",
+      "pagination_complete": true,
+      "truncated": false
+    },
+    {
+      "file": "ads_list.json",
+      "action": "ads_list",
+      "params": {
+        "campaign_ids": [
+          87654321
+        ]
+      },
+      "status": "ok",
+      "pagination_complete": true,
+      "truncated": false
+    },
+    {
+      "file": "moderation_check.json",
+      "action": "moderation_check",
+      "params": {
+        "campaign_ids": [
+          87654321
+        ]
+      },
+      "status": "ok",
+      "pagination_complete": true,
+      "truncated": false
+    },
+    {
+      "file": "negatives_audit.json",
+      "action": "negatives_audit",
+      "params": {
+        "campaign_ids": [
+          87654321
+        ]
+      },
+      "status": "ok",
+      "pagination_complete": true,
+      "truncated": false
+    },
+    {
+      "file": "keywords_list.json",
+      "action": "keywords_list",
+      "params": {
+        "campaign_ids": [
+          87654321
+        ]
+      },
+      "status": "ok",
+      "pagination_complete": true,
+      "truncated": false
+    },
+    {
+      "file": "metrika_direct_cpa.json",
+      "action": "metrika_direct_cpa",
+      "params": {
+        "campaign_ids": [
+          87654321
+        ]
+      },
+      "status": "ok",
+      "pagination_complete": true,
+      "truncated": false
+    },
+    {
+      "file": "changes_check.json",
+      "action": "changes_check",
+      "params": {
+        "campaign_ids": [
+          87654321
+        ]
+      },
+      "status": "ok",
+      "pagination_complete": true,
+      "truncated": false
+    },
+    {
+      "file": "campaign_journal.md",
+      "action": "campaign_journal",
+      "status": "ok"
+    }
+  ],
+  "notes": []
+}

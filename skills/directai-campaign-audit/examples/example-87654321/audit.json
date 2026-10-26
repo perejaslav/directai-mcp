@@ -1,0 +1,3249 @@
+{
+  "schema_version": "2.0",
+  "audit_id": "audit-example-agency-87654321-20261026T151534",
+  "created_at": "2026-10-26T15:15:34+03:00",
+  "mode": [
+    "deep"
+  ],
+  "scope": {
+    "account": "example",
+    "account_login": "example-agency",
+    "campaign_id": "87654321",
+    "campaign_name": "Окна под ключ",
+    "campaign_type": "UNIFIED_CAMPAIGN",
+    "campaign_state": "ON",
+    "account_mismatch": []
+  },
+  "campaign": {
+    "id": "87654321",
+    "name": "Окна под ключ",
+    "type": "UNIFIED_CAMPAIGN",
+    "state": "ON",
+    "status": "ACCEPTED",
+    "start_date": "2026-01-15",
+    "end_date": null,
+    "timezone": "Europe/Moscow",
+    "counters": [
+      "12345678"
+    ],
+    "attribution": "AUTO",
+    "strategy": {
+      "search": "WB_MAXIMUM_CONVERSION_RATE",
+      "network": "WB_MAXIMUM_CONVERSION_RATE",
+      "raw": "поиск: WB_MAXIMUM_CONVERSION_RATE; сети: WB_MAXIMUM_CONVERSION_RATE",
+      "source": "campaigns_get.Strategy",
+      "truncated": false,
+      "network_known": true
+    },
+    "negatives_raw": "0: —"
+  },
+  "periods": {
+    "a": {
+      "from": "2026-09-26",
+      "to": "2026-10-09"
+    },
+    "b": {
+      "from": "2026-09-12",
+      "to": "2026-09-25"
+    },
+    "length_days": 14,
+    "valid": true,
+    "timezone": "Europe/Moscow",
+    "conversion_delay_days": null,
+    "excludes_today": true
+  },
+  "goal": {
+    "id": "11111111",
+    "label": "Заявка с сайта",
+    "source": "campaign",
+    "configured": true,
+    "value_rub": null
+  },
+  "attribution": {
+    "requested": "AUTO",
+    "effective": "AUTO",
+    "source": "config",
+    "raw": "A: 2026-09-26, B: 2026-09-12, расход с НДС, атрибуция: AUTO. Атрибуция: requested=AUTO, effective=AUTO, source=config. Цель: id=11111111, label=Заявка с сайта, source=config.",
+    "consistent": null
+  },
+  "thresholds": {
+    "target_cpa_rub": null,
+    "target_cpl_rub": null,
+    "attention_multiplier": 2.0,
+    "min_spend_no_conversion_rub": 1000.0,
+    "min_clicks_no_conversion": 30,
+    "min_impressions": 1000,
+    "min_clicks": 100,
+    "min_conversions": 10,
+    "alert_sensitivity": 0.2,
+    "tolerance_segment_sum": 0.05,
+    "conversion_delay_days": null,
+    "protected_words": [
+      "цена",
+      "цены",
+      "стоимость",
+      "отзывы",
+      "обзор",
+      "купить",
+      "заказать"
+    ],
+    "observed_cpa_rub": 1460.0,
+    "cpa_basis": "observed",
+    "attention_threshold_rub": 2920.0
+  },
+  "data_sources": [
+    {
+      "action": "stats_compare",
+      "file": "stats_compare.json",
+      "params": {
+        "campaign_ids": [
+          87654321
+        ]
+      },
+      "account": "example-agency",
+      "sha256": "d90f2e2956d4f17b743322bea4cfc48480b22ec3913f6812d7b22fca7b0a6cb7",
+      "bytes": 1477,
+      "fetched_at": "2026-10-20T10:00:00+0300",
+      "status": "ok",
+      "known_action": true,
+      "pagination_complete": true,
+      "truncated": false,
+      "period": null,
+      "rows": 8,
+      "tool_warning": null,
+      "error": null,
+      "note": null
+    },
+    {
+      "action": "campaigns_get",
+      "file": "campaigns_get.json",
+      "params": {
+        "campaign_ids": [
+          87654321
+        ]
+      },
+      "account": "example-agency",
+      "sha256": "cbf2e5791a02c69452b84f3a62cc76421ed7b17a224d2417365bbacd30514788",
+      "bytes": 920,
+      "fetched_at": "2026-10-20T10:00:00+0300",
+      "status": "ok",
+      "known_action": true,
+      "pagination_complete": true,
+      "truncated": false,
+      "period": null,
+      "rows": 1,
+      "tool_warning": null,
+      "error": null,
+      "note": null
+    },
+    {
+      "action": "stats_adgroups",
+      "file": "stats_adgroups.json",
+      "params": {
+        "campaign_ids": [
+          87654321
+        ]
+      },
+      "account": "example-agency",
+      "sha256": "4c77990212e7dbe1841cc59a8eced9c514bd2555b63d9f91530d8dccbe742a1b",
+      "bytes": 945,
+      "fetched_at": "2026-10-20T10:00:00+0300",
+      "status": "ok",
+      "known_action": true,
+      "pagination_complete": true,
+      "truncated": false,
+      "period": null,
+      "rows": 2,
+      "tool_warning": null,
+      "error": null,
+      "note": null
+    },
+    {
+      "action": "stats_keywords",
+      "file": "stats_keywords.json",
+      "params": {
+        "campaign_ids": [
+          87654321
+        ]
+      },
+      "account": "example-agency",
+      "sha256": "5168fd1fc942122c63b67276324670cf6d8b9b7de315000a798f9c397fdfe8fa",
+      "bytes": 1100,
+      "fetched_at": "2026-10-20T10:00:00+0300",
+      "status": "ok",
+      "known_action": true,
+      "pagination_complete": true,
+      "truncated": false,
+      "period": null,
+      "rows": 3,
+      "tool_warning": null,
+      "error": null,
+      "note": null
+    },
+    {
+      "action": "stats_search_queries",
+      "file": "stats_search_queries.json",
+      "params": {
+        "campaign_ids": [
+          87654321
+        ]
+      },
+      "account": "example-agency",
+      "sha256": "047312cbd78d5a917bf749000e6333aac1807c828c2b915e9304bfad9dd9749a",
+      "bytes": 1115,
+      "fetched_at": "2026-10-20T10:00:00+0300",
+      "status": "ok",
+      "known_action": true,
+      "pagination_complete": true,
+      "truncated": false,
+      "period": null,
+      "rows": 3,
+      "tool_warning": null,
+      "error": null,
+      "note": null
+    },
+    {
+      "action": "stats_placements",
+      "file": "stats_placements.json",
+      "params": {
+        "campaign_ids": [
+          87654321
+        ]
+      },
+      "account": "example-agency",
+      "sha256": "3a7e35db47fee85b15d2fa2ae6813b74d7eef37110c850445716e5091d105913",
+      "bytes": 887,
+      "fetched_at": "2026-10-20T10:00:00+0300",
+      "status": "ok",
+      "known_action": true,
+      "pagination_complete": true,
+      "truncated": false,
+      "period": null,
+      "rows": 2,
+      "tool_warning": null,
+      "error": null,
+      "note": null
+    },
+    {
+      "action": "stats_devices",
+      "file": "stats_devices.json",
+      "params": {
+        "campaign_ids": [
+          87654321
+        ]
+      },
+      "account": "example-agency",
+      "sha256": "d89c5da567d2d7c18e066577893b99d0ceb61ee1e02d04d60ebee4752f7333ec",
+      "bytes": 912,
+      "fetched_at": "2026-10-20T10:00:00+0300",
+      "status": "ok",
+      "known_action": true,
+      "pagination_complete": true,
+      "truncated": false,
+      "period": null,
+      "rows": 2,
+      "tool_warning": null,
+      "error": null,
+      "note": null
+    },
+    {
+      "action": "stats_regions",
+      "file": "stats_regions.json",
+      "params": {
+        "campaign_ids": [
+          87654321
+        ]
+      },
+      "account": "example-agency",
+      "sha256": "f16b4a60eec2f9fff4487c0778f34e4169ce3affd6c277b9f1d83690e6f3152d",
+      "bytes": 930,
+      "fetched_at": "2026-10-20T10:00:00+0300",
+      "status": "ok",
+      "known_action": true,
+      "pagination_complete": true,
+      "truncated": false,
+      "period": null,
+      "rows": 2,
+      "tool_warning": null,
+      "error": null,
+      "note": null
+    },
+    {
+      "action": "stats_ads",
+      "file": "stats_ads.json",
+      "params": {
+        "campaign_ids": [
+          87654321
+        ]
+      },
+      "account": "example-agency",
+      "sha256": "dc9ffa8bc8195b8594caa0b3802a004f807077103a2e2a372ab11f859eb78c95",
+      "bytes": 410,
+      "fetched_at": "2026-10-20T10:00:00+0300",
+      "status": "ok",
+      "known_action": true,
+      "pagination_complete": true,
+      "truncated": false,
+      "period": null,
+      "rows": 0,
+      "tool_warning": null,
+      "error": null,
+      "note": null
+    },
+    {
+      "action": "ads_list",
+      "file": "ads_list.json",
+      "params": {
+        "campaign_ids": [
+          87654321
+        ]
+      },
+      "account": "example-agency",
+      "sha256": "ded50bff130c1ba33166e46f7377e8f546967a9501a017b6fd7d106001af9fcb",
+      "bytes": 635,
+      "fetched_at": "2026-10-20T10:00:00+0300",
+      "status": "ok",
+      "known_action": true,
+      "pagination_complete": true,
+      "truncated": false,
+      "period": null,
+      "rows": 1,
+      "tool_warning": null,
+      "error": null,
+      "note": null
+    },
+    {
+      "action": "moderation_check",
+      "file": "moderation_check.json",
+      "params": {
+        "campaign_ids": [
+          87654321
+        ]
+      },
+      "account": "example-agency",
+      "sha256": "99725f8ecb8e22ec1d73ca9fcac84fa0b66b967a222af2756dab1a84bf16b30d",
+      "bytes": 485,
+      "fetched_at": "2026-10-20T10:00:00+0300",
+      "status": "ok",
+      "known_action": true,
+      "pagination_complete": true,
+      "truncated": false,
+      "period": null,
+      "rows": 1,
+      "tool_warning": null,
+      "error": null,
+      "note": null
+    },
+    {
+      "action": "negatives_audit",
+      "file": "negatives_audit.json",
+      "params": {
+        "campaign_ids": [
+          87654321
+        ]
+      },
+      "account": "example-agency",
+      "sha256": "8787d0b8820154529495c65b2d566581252530260b95c3b1febf0d34e943ce3e",
+      "bytes": 363,
+      "fetched_at": "2026-10-20T10:00:00+0300",
+      "status": "ok",
+      "known_action": true,
+      "pagination_complete": true,
+      "truncated": false,
+      "period": null,
+      "rows": 1,
+      "tool_warning": null,
+      "error": null,
+      "note": null
+    },
+    {
+      "action": "keywords_list",
+      "file": "keywords_list.json",
+      "params": {
+        "campaign_ids": [
+          87654321
+        ]
+      },
+      "account": "example-agency",
+      "sha256": "cf7a5ca7c13317ad1f0e028f779805bbfbabb210d8ca7727c16bd3a9e1d08dea",
+      "bytes": 611,
+      "fetched_at": "2026-10-20T10:00:00+0300",
+      "status": "ok",
+      "known_action": true,
+      "pagination_complete": true,
+      "truncated": false,
+      "period": null,
+      "rows": 3,
+      "tool_warning": null,
+      "error": null,
+      "note": null
+    },
+    {
+      "action": "metrika_direct_cpa",
+      "file": "metrika_direct_cpa.json",
+      "params": {
+        "campaign_ids": [
+          87654321
+        ]
+      },
+      "account": "example-agency",
+      "sha256": "f721575294b01b7d76d2b7e40c83b8d71ade9ff39611c4f70f3d72acc1fd04a7",
+      "bytes": 703,
+      "fetched_at": "2026-10-20T10:00:00+0300",
+      "status": "ok",
+      "known_action": true,
+      "pagination_complete": true,
+      "truncated": false,
+      "period": null,
+      "rows": 1,
+      "tool_warning": null,
+      "error": null,
+      "note": null
+    },
+    {
+      "action": "changes_check",
+      "file": "changes_check.json",
+      "params": {
+        "campaign_ids": [
+          87654321
+        ]
+      },
+      "account": "example-agency",
+      "sha256": "4100daa07904855cf559766606d158278bda32c3dd655a052568ff3bac14d2a3",
+      "bytes": 550,
+      "fetched_at": "2026-10-20T10:00:00+0300",
+      "status": "ok",
+      "known_action": true,
+      "pagination_complete": true,
+      "truncated": false,
+      "period": null,
+      "rows": 2,
+      "tool_warning": null,
+      "error": null,
+      "note": null
+    },
+    {
+      "action": "campaign_journal",
+      "file": "campaign_journal.md",
+      "params": {},
+      "account": null,
+      "sha256": "a3ce9413ed219e1fb15d397ff0a163b56580516fe35ffb28830c833bf4f3b557",
+      "bytes": 653,
+      "fetched_at": "2026-10-26T15:15:34+03:00",
+      "status": "ok",
+      "known_action": true,
+      "pagination_complete": null,
+      "truncated": null,
+      "period": null,
+      "rows": null,
+      "tool_warning": null,
+      "error": null,
+      "note": null
+    }
+  ],
+  "data_quality": {
+    "status": "passed",
+    "checks": [
+      {
+        "id": "DQ-SRC-01",
+        "title": "Основной источник статистики",
+        "status": "passed",
+        "detail": "stats_compare получен",
+        "blocks": [],
+        "severity": "low"
+      },
+      {
+        "id": "DQ-SRC-02",
+        "title": "Настройки кампании",
+        "status": "passed",
+        "detail": "campaigns_get получен",
+        "blocks": [],
+        "severity": "low"
+      },
+      {
+        "id": "DQ-SRC-03",
+        "title": "Доступность источников",
+        "status": "passed",
+        "detail": "все объявленные источники прочитаны",
+        "blocks": [],
+        "severity": "low"
+      },
+      {
+        "id": "DQ-API-01",
+        "title": "Лимит запросов API",
+        "status": "passed",
+        "detail": "ошибок API нет",
+        "blocks": [],
+        "severity": "low"
+      },
+      {
+        "id": "DQ-API-02",
+        "title": "Предупреждение API",
+        "status": "passed",
+        "detail": "предупреждений нет",
+        "blocks": [],
+        "severity": "low"
+      },
+      {
+        "id": "DQ-ACC-01",
+        "title": "Единство кабинета",
+        "status": "passed",
+        "detail": "кабинет: example-agency",
+        "blocks": [],
+        "severity": "low"
+      },
+      {
+        "id": "DQ-ACC-02",
+        "title": "Принадлежность источников",
+        "status": "passed",
+        "detail": "meta.account: example-agency; строки: example-agency",
+        "blocks": [],
+        "severity": "low"
+      },
+      {
+        "id": "DQ-CMP-01",
+        "title": "Идентификация кампании",
+        "status": "passed",
+        "detail": "кампания 87654321 подтверждена",
+        "blocks": [],
+        "severity": "low"
+      },
+      {
+        "id": "DQ-CMP-02",
+        "title": "Охват источников",
+        "status": "passed",
+        "detail": "все источники объявлены для кампании 87654321",
+        "blocks": [],
+        "severity": "low"
+      },
+      {
+        "id": "DQ-PRD-01",
+        "title": "Периоды сравнения",
+        "status": "passed",
+        "detail": "A 14 дн., B 14 дн.",
+        "blocks": [],
+        "severity": "low"
+      },
+      {
+        "id": "DQ-PRD-02",
+        "title": "Период в ответе инструмента",
+        "status": "passed",
+        "detail": "шапка: A с 2026-09-26, B с 2026-09-12; задание: A с 2026-09-26, B с 2026-09-12",
+        "blocks": [],
+        "severity": "low"
+      },
+      {
+        "id": "DQ-PRD-03",
+        "title": "База предыдущего периода",
+        "status": "passed",
+        "detail": "в периоде B есть данные",
+        "blocks": [],
+        "severity": "low"
+      },
+      {
+        "id": "DQ-MET-01",
+        "title": "Обязательные показатели",
+        "status": "passed",
+        "detail": "показы, клики и расход получены",
+        "blocks": [],
+        "severity": "low"
+      },
+      {
+        "id": "DQ-MET-02",
+        "title": "Наличие трафика",
+        "status": "passed",
+        "detail": "показов 47200, кликов 980",
+        "blocks": [],
+        "severity": "low"
+      },
+      {
+        "id": "DQ-CNV-01",
+        "title": "Данные о конверсиях",
+        "status": "passed",
+        "detail": "конверсий в периоде A: 26",
+        "blocks": [],
+        "severity": "low"
+      },
+      {
+        "id": "DQ-GOAL-01",
+        "title": "Основная цель",
+        "status": "passed",
+        "detail": "цель 11111111 (Заявка с сайта), источник: campaign",
+        "blocks": [],
+        "severity": "low"
+      },
+      {
+        "id": "DQ-ATR-01",
+        "title": "Модель атрибуции",
+        "status": "passed",
+        "detail": "AUTO (источник: config)",
+        "blocks": [],
+        "severity": "low"
+      },
+      {
+        "id": "DQ-PAG-01",
+        "title": "Полнота выгрузки",
+        "status": "passed",
+        "detail": "пагинация подтверждена или не требуется",
+        "blocks": [],
+        "severity": "low"
+      },
+      {
+        "id": "DQ-PAG-02",
+        "title": "Усечение выгрузки",
+        "status": "passed",
+        "detail": "усечения нет",
+        "blocks": [],
+        "severity": "low"
+      },
+      {
+        "id": "DQ-DUP-01",
+        "title": "Повторяющиеся записи",
+        "status": "passed",
+        "detail": "дублей не найдено",
+        "blocks": [],
+        "severity": "low"
+      },
+      {
+        "id": "DQ-SEG-01",
+        "title": "Совместимость сегментов и итога",
+        "status": "passed",
+        "detail": "сегменты согласуются с итогом в пределах допуска",
+        "blocks": [],
+        "severity": "low"
+      },
+      {
+        "id": "DQ-NUL-01",
+        "title": "Пропущенные значения",
+        "status": "passed",
+        "detail": "пропусков нет",
+        "blocks": [],
+        "severity": "low"
+      },
+      {
+        "id": "DQ-NEG-01",
+        "title": "Отрицательные значения",
+        "status": "passed",
+        "detail": "отрицательных значений нет",
+        "blocks": [],
+        "severity": "low"
+      },
+      {
+        "id": "DQ-UNI-01",
+        "title": "Валюта и НДС",
+        "status": "passed",
+        "detail": "расход в рублях, НДС: с НДС",
+        "blocks": [],
+        "severity": "low"
+      },
+      {
+        "id": "DQ-DLY-01",
+        "title": "Зрелость конверсий",
+        "status": "passed",
+        "detail": "задержка конверсий: не задана, период закрыт 17 дн. назад",
+        "blocks": [],
+        "severity": "low"
+      },
+      {
+        "id": "DQ-STATE-01",
+        "title": "Состояние кампании",
+        "status": "passed",
+        "detail": "состояние ON",
+        "blocks": [],
+        "severity": "low"
+      }
+    ],
+    "counts": {
+      "passed": 26,
+      "warning": 0,
+      "blocked": 0,
+      "unavailable": 0,
+      "not_applicable": 0
+    },
+    "gates": {},
+    "problems": []
+  },
+  "metrics": {
+    "primary_source": "stats_compare",
+    "units": {
+      "cost": "RUB_VAT",
+      "ctr": "percent",
+      "cr": "percent",
+      "cpa": "RUB"
+    },
+    "a": {
+      "impressions": 47200,
+      "clicks": 980,
+      "ctr": 2.08,
+      "cost": 37960.0,
+      "cpc": 38.73,
+      "conversions": 26,
+      "cr": 2.65,
+      "cpa": 1460.0,
+      "bounce_rate": null
+    },
+    "b": {
+      "impressions": 48000,
+      "clicks": 1000,
+      "ctr": 2.08,
+      "cost": 38000.0,
+      "cpc": 38.0,
+      "conversions": 40,
+      "cr": 4.0,
+      "cpa": 950.0,
+      "bounce_rate": null
+    },
+    "comparison": {
+      "impressions": {
+        "a": 47200,
+        "b": 48000,
+        "kind": "count",
+        "available": true,
+        "abs": -800,
+        "pct": -1.6666666666666667,
+        "pp": null,
+        "base_zero": false,
+        "display_hides_change": false,
+        "note": null
+      },
+      "clicks": {
+        "a": 980,
+        "b": 1000,
+        "kind": "count",
+        "available": true,
+        "abs": -20,
+        "pct": -2.0,
+        "pp": null,
+        "base_zero": false,
+        "display_hides_change": false,
+        "note": null
+      },
+      "ctr": {
+        "a": 2.08,
+        "b": 2.08,
+        "kind": "rate",
+        "available": true,
+        "abs": 0.0,
+        "pct": 0.0,
+        "pp": 0.0,
+        "base_zero": false,
+        "display_hides_change": true,
+        "note": "источник отдаёт долю с двумя знаками; по сырым clicks значения различаются"
+      },
+      "cost": {
+        "a": 37960.0,
+        "b": 38000.0,
+        "kind": "money",
+        "available": true,
+        "abs": -40.0,
+        "pct": -0.10526315789473684,
+        "pp": null,
+        "base_zero": false,
+        "display_hides_change": false,
+        "note": null
+      },
+      "cpc": {
+        "a": 38.73,
+        "b": 38.0,
+        "kind": "per_click",
+        "available": true,
+        "abs": 0.7299999999999969,
+        "pct": 1.921052631578939,
+        "pp": null,
+        "base_zero": false,
+        "display_hides_change": false,
+        "note": null
+      },
+      "conversions": {
+        "a": 26,
+        "b": 40,
+        "kind": "count",
+        "available": true,
+        "abs": -14,
+        "pct": -35.0,
+        "pp": null,
+        "base_zero": false,
+        "display_hides_change": false,
+        "note": null
+      },
+      "cr": {
+        "a": 2.65,
+        "b": 4.0,
+        "kind": "rate",
+        "available": true,
+        "abs": -1.35,
+        "pct": -33.75,
+        "pp": -1.35,
+        "base_zero": false,
+        "display_hides_change": false,
+        "note": null
+      },
+      "cpa": {
+        "a": 1460.0,
+        "b": 950.0,
+        "kind": "money",
+        "available": true,
+        "abs": 510.0,
+        "pct": 53.68421052631579,
+        "pp": null,
+        "base_zero": false,
+        "display_hides_change": false,
+        "note": null
+      },
+      "bounce_rate": {
+        "a": null,
+        "b": null,
+        "kind": "rate",
+        "available": false,
+        "abs": null,
+        "pct": null,
+        "pp": null,
+        "base_zero": false,
+        "display_hides_change": false,
+        "note": "нет значения: A, B"
+      }
+    },
+    "tool_notes": {
+      "impressions": {
+        "metric": "Показы",
+        "a": "47 200",
+        "b": "48 000",
+        "tool_delta": "-800",
+        "tool_delta_pct": "+1.69%"
+      },
+      "clicks": {
+        "metric": "Клики",
+        "a": "980",
+        "b": "1 000",
+        "tool_delta": "-20",
+        "tool_delta_pct": "+2.04%"
+      },
+      "ctr": {
+        "metric": "CTR, %",
+        "a": "2.08",
+        "b": "2.08",
+        "tool_delta": "+0.00 п.п.",
+        "tool_delta_pct": "+0.00%"
+      },
+      "cost": {
+        "metric": "Расход, ₽",
+        "a": "37 960",
+        "b": "38 000",
+        "tool_delta": "-40",
+        "tool_delta_pct": "+0.11%"
+      },
+      "cpc": {
+        "metric": "CPC, ₽",
+        "a": "38.73",
+        "b": "38",
+        "tool_delta": "0.73",
+        "tool_delta_pct": "-1.88%"
+      },
+      "conversions": {
+        "metric": "Конверсии (достижения)",
+        "a": "26",
+        "b": "40",
+        "tool_delta": "-14",
+        "tool_delta_pct": "+53.85%"
+      },
+      "cr": {
+        "metric": "CR, %",
+        "a": "2.65",
+        "b": "4.00",
+        "tool_delta": "-1.35 п.п.",
+        "tool_delta_pct": "+50.94%"
+      },
+      "cpa": {
+        "metric": "CPA, ₽",
+        "a": "1 460",
+        "b": "950",
+        "tool_delta": "510",
+        "tool_delta_pct": "-34.93%"
+      }
+    }
+  },
+  "segments": {
+    "devices": {
+      "available": true,
+      "action": "stats_devices",
+      "key_column": "Device",
+      "total": {
+        "cost": 37960.0,
+        "conversions": 26,
+        "clicks": 980,
+        "impressions": 47200
+      },
+      "columns": [
+        "Device",
+        "Impressions",
+        "Clicks",
+        "CTR",
+        "Cost",
+        "Conversions",
+        "CPA",
+        "CR"
+      ],
+      "note": null,
+      "source_period": null,
+      "attribution": null,
+      "truncated": false,
+      "pagination_complete": true
+    },
+    "regions": {
+      "available": true,
+      "action": "stats_regions",
+      "key_column": "Region",
+      "total": {
+        "cost": 37960.0,
+        "conversions": 26,
+        "clicks": 980,
+        "impressions": 47200
+      },
+      "columns": [
+        "Region",
+        "Impressions",
+        "Clicks",
+        "CTR",
+        "Cost",
+        "Conversions",
+        "CPA",
+        "CR"
+      ],
+      "note": null,
+      "source_period": null,
+      "attribution": null,
+      "truncated": false,
+      "pagination_complete": true
+    },
+    "placements": {
+      "available": true,
+      "action": "stats_placements",
+      "key_column": "Placement",
+      "total": {
+        "cost": 5900.0,
+        "conversions": 0,
+        "clicks": 700,
+        "impressions": 130000
+      },
+      "columns": [
+        "Placement",
+        "Impressions",
+        "Clicks",
+        "CTR",
+        "Cost",
+        "Conversions",
+        "CR"
+      ],
+      "note": null,
+      "source_period": null,
+      "attribution": null,
+      "truncated": false,
+      "pagination_complete": true
+    },
+    "search_queries": {
+      "available": true,
+      "action": "stats_search_queries",
+      "key_column": "Query",
+      "total": {
+        "cost": 12200.0,
+        "conversions": 9,
+        "clicks": 235,
+        "impressions": 8600
+      },
+      "columns": [
+        "Query",
+        "Impressions",
+        "Clicks",
+        "CTR",
+        "Cost",
+        "Conversions",
+        "CR"
+      ],
+      "note": null,
+      "source_period": null,
+      "attribution": null,
+      "truncated": false,
+      "pagination_complete": true
+    },
+    "keywords": {
+      "available": true,
+      "action": "stats_keywords",
+      "key_column": "Keyword",
+      "total": {
+        "cost": 16900.0,
+        "conversions": 4,
+        "clicks": 425,
+        "impressions": 24400
+      },
+      "columns": [
+        "Keyword",
+        "Impressions",
+        "Clicks",
+        "CTR",
+        "Cost",
+        "Conversions",
+        "CPA",
+        "CR"
+      ],
+      "note": null,
+      "source_period": null,
+      "attribution": null,
+      "truncated": false,
+      "pagination_complete": true
+    },
+    "adgroups": {
+      "available": true,
+      "action": "stats_adgroups",
+      "key_column": "AdGroupName",
+      "total": {
+        "cost": 37960.0,
+        "conversions": 26,
+        "clicks": 780,
+        "impressions": 36000
+      },
+      "columns": [
+        "AdGroupName",
+        "Impressions",
+        "Clicks",
+        "CTR",
+        "Cost",
+        "Conversions",
+        "CPA",
+        "CR"
+      ],
+      "note": null,
+      "source_period": null,
+      "attribution": null,
+      "truncated": false,
+      "pagination_complete": true
+    },
+    "ads": {
+      "available": true,
+      "action": "stats_ads",
+      "key_column": null,
+      "total": {
+        "cost": null,
+        "conversions": null,
+        "clicks": null,
+        "impressions": null
+      },
+      "columns": [],
+      "note": "строк нет",
+      "source_period": null,
+      "attribution": null,
+      "truncated": false,
+      "pagination_complete": true
+    },
+    "audiences": {
+      "available": false,
+      "action": "stats_audiences",
+      "key_column": null,
+      "total": {
+        "cost": null,
+        "conversions": null,
+        "clicks": null,
+        "impressions": null
+      },
+      "columns": [],
+      "note": "источник не получен",
+      "source_period": null,
+      "attribution": null,
+      "truncated": null,
+      "pagination_complete": null
+    },
+    "metrika": {
+      "available": true,
+      "note": null,
+      "context": "metrika_direct_cpa: example-agency, атрибуция lastsign."
+    }
+  },
+  "segment_rows": {
+    "devices": [
+      {
+        "raw": {
+          "Device": "MOBILE",
+          "Impressions": "26 000",
+          "Clicks": "620",
+          "CTR": "2.38",
+          "Cost": "24000.00",
+          "Conversions": "8",
+          "CPA": "3000.00",
+          "CR": "1.29"
+        },
+        "computed": [
+          "cpc"
+        ],
+        "impressions": 26000,
+        "clicks": 620,
+        "cost": 24000.0,
+        "ctr": 2.38,
+        "cpc": 38.70967741935484,
+        "conversions": 8,
+        "cpa": 3000.0,
+        "cr": 1.29,
+        "bounce_rate": null,
+        "clicks_to_visits": null,
+        "visits": null,
+        "revenue": null,
+        "key": "MOBILE",
+        "id": "MOBILE"
+      },
+      {
+        "raw": {
+          "Device": "DESKTOP",
+          "Impressions": "21 200",
+          "Clicks": "360",
+          "CTR": "1.70",
+          "Cost": "13960.00",
+          "Conversions": "18",
+          "CPA": "775.56",
+          "CR": "5.00"
+        },
+        "computed": [
+          "cpc"
+        ],
+        "impressions": 21200,
+        "clicks": 360,
+        "cost": 13960.0,
+        "ctr": 1.7,
+        "cpc": 38.77777777777778,
+        "conversions": 18,
+        "cpa": 775.56,
+        "cr": 5.0,
+        "bounce_rate": null,
+        "clicks_to_visits": null,
+        "visits": null,
+        "revenue": null,
+        "key": "DESKTOP",
+        "id": "DESKTOP"
+      }
+    ],
+    "regions": [
+      {
+        "raw": {
+          "Region": "Москва",
+          "Impressions": "30 000",
+          "Clicks": "600",
+          "CTR": "2.00",
+          "Cost": "25000.00",
+          "Conversions": "18",
+          "CPA": "1388.89",
+          "CR": "3.00"
+        },
+        "computed": [
+          "cpc"
+        ],
+        "impressions": 30000,
+        "clicks": 600,
+        "cost": 25000.0,
+        "ctr": 2.0,
+        "cpc": 41.666666666666664,
+        "conversions": 18,
+        "cpa": 1388.89,
+        "cr": 3.0,
+        "bounce_rate": null,
+        "clicks_to_visits": null,
+        "visits": null,
+        "revenue": null,
+        "key": "Москва",
+        "id": "Москва"
+      },
+      {
+        "raw": {
+          "Region": "Краснодар",
+          "Impressions": "17 200",
+          "Clicks": "380",
+          "CTR": "2.21",
+          "Cost": "12960.00",
+          "Conversions": "8",
+          "CPA": "1620.00",
+          "CR": "2.11"
+        },
+        "computed": [
+          "cpc"
+        ],
+        "impressions": 17200,
+        "clicks": 380,
+        "cost": 12960.0,
+        "ctr": 2.21,
+        "cpc": 34.10526315789474,
+        "conversions": 8,
+        "cpa": 1620.0,
+        "cr": 2.11,
+        "bounce_rate": null,
+        "clicks_to_visits": null,
+        "visits": null,
+        "revenue": null,
+        "key": "Краснодар",
+        "id": "Краснодар"
+      }
+    ],
+    "placements": [
+      {
+        "raw": {
+          "Placement": "video-fun.example",
+          "Impressions": "60 000",
+          "Clicks": "300",
+          "CTR": "0.50",
+          "Cost": "2700.00",
+          "Conversions": "0",
+          "CR": "0.00"
+        },
+        "computed": [
+          "cpc"
+        ],
+        "impressions": 60000,
+        "clicks": 300,
+        "cost": 2700.0,
+        "ctr": 0.5,
+        "cpc": 9.0,
+        "conversions": 0,
+        "cpa": null,
+        "cr": 0.0,
+        "bounce_rate": null,
+        "clicks_to_visits": null,
+        "visits": null,
+        "revenue": null,
+        "key": "video-fun.example",
+        "id": "video-fun.example"
+      },
+      {
+        "raw": {
+          "Placement": "shop-fun.example",
+          "Impressions": "70 000",
+          "Clicks": "400",
+          "CTR": "0.57",
+          "Cost": "3200.00",
+          "Conversions": "0",
+          "CR": "0.00"
+        },
+        "computed": [
+          "cpc"
+        ],
+        "impressions": 70000,
+        "clicks": 400,
+        "cost": 3200.0,
+        "ctr": 0.57,
+        "cpc": 8.0,
+        "conversions": 0,
+        "cpa": null,
+        "cr": 0.0,
+        "bounce_rate": null,
+        "clicks_to_visits": null,
+        "visits": null,
+        "revenue": null,
+        "key": "shop-fun.example",
+        "id": "shop-fun.example"
+      }
+    ],
+    "search_queries": [
+      {
+        "raw": {
+          "Query": "окна даром",
+          "Impressions": "1 400",
+          "Clicks": "45",
+          "CTR": "3.21",
+          "Cost": "1800.00",
+          "Conversions": "0",
+          "CR": "0.00"
+        },
+        "computed": [
+          "cpc"
+        ],
+        "impressions": 1400,
+        "clicks": 45,
+        "cost": 1800.0,
+        "ctr": 3.21,
+        "cpc": 40.0,
+        "conversions": 0,
+        "cpa": null,
+        "cr": 0.0,
+        "bounce_rate": null,
+        "clicks_to_visits": null,
+        "visits": null,
+        "revenue": null,
+        "key": "окна даром",
+        "id": "окна даром",
+        "intent": "informational",
+        "intent_reason": "информационные маркеры: даром"
+      },
+      {
+        "raw": {
+          "Query": "работа монтажником окон",
+          "Impressions": "1 200",
+          "Clicks": "40",
+          "CTR": "3.33",
+          "Cost": "1400.00",
+          "Conversions": "0",
+          "CR": "0.00"
+        },
+        "computed": [
+          "cpc"
+        ],
+        "impressions": 1200,
+        "clicks": 40,
+        "cost": 1400.0,
+        "ctr": 3.33,
+        "cpc": 35.0,
+        "conversions": 0,
+        "cpa": null,
+        "cr": 0.0,
+        "bounce_rate": null,
+        "clicks_to_visits": null,
+        "visits": null,
+        "revenue": null,
+        "key": "работа монтажником окон",
+        "id": "работа монтажником окон",
+        "intent": "irrelevant",
+        "intent_reason": "совпадение с контекстом исключений: работа"
+      },
+      {
+        "raw": {
+          "Query": "купить окна пвх",
+          "Impressions": "6 000",
+          "Clicks": "150",
+          "CTR": "2.50",
+          "Cost": "9000.00",
+          "Conversions": "9",
+          "CPA": "1010.00",
+          "CR": "6.00"
+        },
+        "computed": [
+          "cpc"
+        ],
+        "impressions": 6000,
+        "clicks": 150,
+        "cost": 9000.0,
+        "ctr": 2.5,
+        "cpc": 60.0,
+        "conversions": 9,
+        "cpa": 1010.0,
+        "cr": 6.0,
+        "bounce_rate": null,
+        "clicks_to_visits": null,
+        "visits": null,
+        "revenue": null,
+        "key": "купить окна пвх",
+        "id": "купить окна пвх",
+        "intent": "hot_commercial",
+        "intent_reason": "коммерческие маркеры: купить"
+      }
+    ],
+    "keywords": [
+      {
+        "raw": {
+          "Keyword": "окна пвх",
+          "Impressions": "20 000",
+          "Clicks": "300",
+          "CTR": "1.50",
+          "Cost": "12000.00",
+          "Conversions": "4",
+          "CPA": "3000.00",
+          "CR": "1.33"
+        },
+        "computed": [
+          "cpc"
+        ],
+        "impressions": 20000,
+        "clicks": 300,
+        "cost": 12000.0,
+        "ctr": 1.5,
+        "cpc": 40.0,
+        "conversions": 4,
+        "cpa": 3000.0,
+        "cr": 1.33,
+        "bounce_rate": null,
+        "clicks_to_visits": null,
+        "visits": null,
+        "revenue": null,
+        "key": "окна пвх",
+        "id": "окна пвх"
+      },
+      {
+        "raw": {
+          "Keyword": "окна даром",
+          "Impressions": "1 400",
+          "Clicks": "45",
+          "CTR": "3.21",
+          "Cost": "1800.00",
+          "Conversions": "0",
+          "CR": "0.00"
+        },
+        "computed": [
+          "cpc"
+        ],
+        "impressions": 1400,
+        "clicks": 45,
+        "cost": 1800.0,
+        "ctr": 3.21,
+        "cpc": 40.0,
+        "conversions": 0,
+        "cpa": null,
+        "cr": 0.0,
+        "bounce_rate": null,
+        "clicks_to_visits": null,
+        "visits": null,
+        "revenue": null,
+        "key": "окна даром",
+        "id": "окна даром"
+      },
+      {
+        "raw": {
+          "Keyword": "балконы эконом",
+          "Impressions": "3 000",
+          "Clicks": "80",
+          "CTR": "2.67",
+          "Cost": "3100.00",
+          "Conversions": "0",
+          "CR": "0.00"
+        },
+        "computed": [
+          "cpc"
+        ],
+        "impressions": 3000,
+        "clicks": 80,
+        "cost": 3100.0,
+        "ctr": 2.67,
+        "cpc": 38.75,
+        "conversions": 0,
+        "cpa": null,
+        "cr": 0.0,
+        "bounce_rate": null,
+        "clicks_to_visits": null,
+        "visits": null,
+        "revenue": null,
+        "key": "балконы эконом",
+        "id": "балконы эконом"
+      }
+    ],
+    "adgroups": [
+      {
+        "raw": {
+          "AdGroupName": "Окна ПВХ",
+          "Impressions": "24 000",
+          "Clicks": "520",
+          "CTR": "2.17",
+          "Cost": "24960.00",
+          "Conversions": "18",
+          "CPA": "1386.67",
+          "CR": "3.46"
+        },
+        "computed": [
+          "cpc"
+        ],
+        "impressions": 24000,
+        "clicks": 520,
+        "cost": 24960.0,
+        "ctr": 2.17,
+        "cpc": 48.0,
+        "conversions": 18,
+        "cpa": 1386.67,
+        "cr": 3.46,
+        "bounce_rate": null,
+        "clicks_to_visits": null,
+        "visits": null,
+        "revenue": null,
+        "key": "Окна ПВХ",
+        "id": "Окна ПВХ"
+      },
+      {
+        "raw": {
+          "AdGroupName": "Балконы",
+          "Impressions": "12 000",
+          "Clicks": "260",
+          "CTR": "2.17",
+          "Cost": "13000.00",
+          "Conversions": "8",
+          "CPA": "1625.00",
+          "CR": "3.08"
+        },
+        "computed": [
+          "cpc"
+        ],
+        "impressions": 12000,
+        "clicks": 260,
+        "cost": 13000.0,
+        "ctr": 2.17,
+        "cpc": 50.0,
+        "conversions": 8,
+        "cpa": 1625.0,
+        "cr": 3.08,
+        "bounce_rate": null,
+        "clicks_to_visits": null,
+        "visits": null,
+        "revenue": null,
+        "key": "Балконы",
+        "id": "Балконы"
+      }
+    ],
+    "ads": [],
+    "audiences": []
+  },
+  "segments_checked": [
+    {
+      "segment": "devices",
+      "comparable": true,
+      "reason": "период и охват совпадают"
+    },
+    {
+      "segment": "regions",
+      "comparable": true,
+      "reason": "период и охват совпадают"
+    }
+  ],
+  "findings": [
+    {
+      "id": "F-001",
+      "rule_id": "TRK-00",
+      "category": "tracking",
+      "title": "Счётчик Метрики привязан",
+      "object": {
+        "type": "campaign",
+        "id": "87654321"
+      },
+      "evidence": [
+        {
+          "source": "campaigns_get",
+          "field": "Counters",
+          "value": "12345678"
+        }
+      ],
+      "metrics": {
+        "counters": 1
+      },
+      "threshold": null,
+      "classification": "fact",
+      "priority": "P3",
+      "confidence": "high",
+      "why": "Счётчик указан в настройках кампании.",
+      "alternatives": [],
+      "next_step": "",
+      "spend": {
+        "actual": null,
+        "at_risk": null,
+        "potential_saving": null
+      },
+      "recommendation_id": null
+    },
+    {
+      "id": "F-002",
+      "rule_id": "TRK-03",
+      "category": "tracking",
+      "title": "Визитов заметно меньше кликов",
+      "object": {
+        "type": "campaign",
+        "id": "87654321"
+      },
+      "evidence": [
+        {
+          "source": "metrika_direct_cpa",
+          "field": "ClicksToVisits",
+          "value": 61.2
+        },
+        {
+          "source": "metrika_direct_cpa",
+          "field": "Clicks",
+          "value": 980
+        },
+        {
+          "source": "metrika_direct_cpa",
+          "field": "Visits",
+          "value": 600
+        }
+      ],
+      "metrics": {
+        "clicks": 980.0,
+        "visits": 600.0,
+        "clicks_to_visits_pct": 61.2
+      },
+      "threshold": {
+        "name": "минимальная доля визитов",
+        "value": 70,
+        "unit": "percent"
+      },
+      "classification": "likely_cause",
+      "priority": "P0",
+      "confidence": "medium",
+      "why": "Визиты составляют 61.2% кликов. Это может быть следствием разметки, медленной загрузки, блокировщиков или редиректов.",
+      "alternatives": [
+        "часть кликов не доходит из-за скорости сайта",
+        "счётчик установлен не на всех страницах",
+        "потеря UTM или редирект между доменами"
+      ],
+      "next_step": "Проверить отчёт «Источники → Директ» в Метрике и тестовый визит с меткой.",
+      "spend": {
+        "actual": null,
+        "at_risk": null,
+        "potential_saving": null
+      },
+      "recommendation_id": "R-001"
+    },
+    {
+      "id": "F-003",
+      "rule_id": "MOD-01",
+      "category": "moderation",
+      "title": "Объявление или фраза отклонены модерацией",
+      "object": {
+        "type": "ad",
+        "id": "1923568665500247917",
+        "path": "campaign:87654321/ad:1923568665500247917"
+      },
+      "evidence": [
+        {
+          "source": "moderation_check",
+          "field": "Status",
+          "value": "REJECTED"
+        },
+        {
+          "source": "moderation_check",
+          "field": "Reason",
+          "value": "превышение лимита заглавных букв"
+        }
+      ],
+      "metrics": {
+        "status": "REJECTED"
+      },
+      "threshold": null,
+      "classification": "fact",
+      "priority": "P0",
+      "confidence": "high",
+      "why": "Модерация отклонила объект: превышение лимита заглавных букв.",
+      "alternatives": [],
+      "next_step": "Исправить текст/ссылку и отправить на повторную модерацию.",
+      "spend": {
+        "actual": null,
+        "at_risk": null,
+        "potential_saving": null
+      },
+      "recommendation_id": "R-002"
+    },
+    {
+      "id": "F-004",
+      "rule_id": "EXT-01",
+      "category": "ads",
+      "title": "В объявлениях не заполнены расширения",
+      "object": {
+        "type": "ad",
+        "id": "1923568665500247917",
+        "path": "campaign:87654321/ad:1923568665500247917"
+      },
+      "evidence": [
+        {
+          "source": "ads_list",
+          "field": "missing",
+          "value": "Callouts, DisplayUrlPath"
+        },
+        {
+          "source": "ads_list",
+          "field": "ads_checked",
+          "value": 1
+        }
+      ],
+      "metrics": {
+        "ads_with_gaps": 1,
+        "ads_checked": 1,
+        "missing_fields": [
+          "Callouts",
+          "DisplayUrlPath"
+        ]
+      },
+      "threshold": null,
+      "classification": "fact",
+      "priority": "P2",
+      "confidence": "high",
+      "why": "У 1 из 1 объявлений не заполнено: отображаемая ссылка, уточнения. Это снижает площадь объявления, но не гарантирует рост конверсий.",
+      "alternatives": [],
+      "next_step": "Дописать: отображаемая ссылка, уточнения. Проверить отображение на мобильном.",
+      "spend": {
+        "actual": null,
+        "at_risk": null,
+        "potential_saving": null
+      },
+      "recommendation_id": "R-003"
+    },
+    {
+      "id": "F-005",
+      "rule_id": "DYN-01",
+      "category": "dynamics",
+      "title": "Конверсии изменились на -35.0%",
+      "object": {
+        "type": "campaign",
+        "id": "87654321"
+      },
+      "evidence": [
+        {
+          "source": "stats_compare",
+          "field": "Конверсии",
+          "value": "40 → 26"
+        },
+        {
+          "source": "stats_compare",
+          "field": "CTR",
+          "value": "2.08 → 2.08"
+        },
+        {
+          "source": "stats_compare",
+          "field": "CR",
+          "value": "4.00 → 2.65"
+        },
+        {
+          "source": "stats_compare",
+          "field": "CPA",
+          "value": "950,00 ₽ → 1 460,00 ₽"
+        },
+        {
+          "source": "stats_compare",
+          "field": "проверка значимости",
+          "value": "z=-1.67, p=0.095"
+        }
+      ],
+      "metrics": {
+        "conversions_a": 26,
+        "conversions_b": 40,
+        "delta_pct": -35.0,
+        "ctr_pct_delta": 0.0,
+        "cr_pct_delta": -33.75,
+        "cpc_pct_delta": 1.921052631578939,
+        "cpa_pct_delta": 53.68421052631579,
+        "z": -1.669362117806062,
+        "p": 0.0950456364349149,
+        "significant": false
+      },
+      "threshold": {
+        "name": "порог предупреждения",
+        "value": 20.0,
+        "unit": "percent"
+      },
+      "classification": "likely_cause",
+      "priority": "P2",
+      "confidence": "low",
+      "why": "Факт: конверсии 40 → 26 (-35.0%), CPA 950,00 ₽ → 1 460,00 ₽. Арифметически основной вклад даёт CR. Различие статистически НЕ подтверждено (z=-1.67, p=0.095): это может быть колебанием, вывод осторожный.",
+      "alternatives": [
+        "изменение спроса или сезонность",
+        "другой состав трафика (запросы, площадки, регионы)",
+        "изменения на сайте или в форме заявки",
+        "задержка отражения конверсий",
+        "изменение ставок или стратегии в этот период"
+      ],
+      "next_step": "Проверить журнал изменений и сегменты (устройства, площадки, запросы) за тот же период.",
+      "spend": {
+        "actual": null,
+        "at_risk": null,
+        "potential_saving": null
+      },
+      "recommendation_id": "R-004"
+    },
+    {
+      "id": "F-006",
+      "rule_id": "SEG-01",
+      "category": "segments",
+      "title": "CPA сегмента выше среднего: MOBILE",
+      "object": {
+        "type": "device",
+        "id": "MOBILE",
+        "path": "campaign:87654321/device:MOBILE"
+      },
+      "evidence": [
+        {
+          "source": "stats_devices",
+          "field": "CPA",
+          "value": 3000.0
+        },
+        {
+          "source": "stats_compare",
+          "field": "CPA",
+          "value": 1460.0
+        }
+      ],
+      "metrics": {
+        "segment_cpa": 3000.0,
+        "campaign_cpa": 1460.0,
+        "segment_cost": 24000.0,
+        "segment_conversions": 8
+      },
+      "threshold": {
+        "name": "2 × CPA",
+        "value": 2920.0,
+        "unit": "RUB"
+      },
+      "classification": "fact",
+      "priority": "P2",
+      "confidence": "medium",
+      "why": "CPA сегмента 3 000,00 ₽ против среднего 1 460,00 ₽. Источник сегмента: stats_devices, период и охват совпадают с итогом.",
+      "alternatives": [
+        "мало конверсий в сегменте",
+        "разная цена клика",
+        "состав аудитории"
+      ],
+      "next_step": "Проверить объём: при малом числе конверсий вывод не делать.",
+      "spend": {
+        "actual": 24000.0,
+        "at_risk": null,
+        "potential_saving": null
+      },
+      "recommendation_id": "R-005"
+    },
+    {
+      "id": "F-007",
+      "rule_id": "SQ-01",
+      "category": "search_queries",
+      "title": "Запрос без конверсий: «окна даром»",
+      "object": {
+        "type": "search_query",
+        "id": "окна даром",
+        "path": "campaign:87654321/query:окна даром"
+      },
+      "evidence": [
+        {
+          "source": "stats_search_queries",
+          "field": "Cost",
+          "value": 1800.0
+        },
+        {
+          "source": "stats_search_queries",
+          "field": "Conversions",
+          "value": 0
+        },
+        {
+          "source": "intent",
+          "field": "class",
+          "value": "informational"
+        },
+        {
+          "source": "intent",
+          "field": "reason",
+          "value": "информационные маркеры: даром"
+        }
+      ],
+      "metrics": {
+        "cost": 1800.0,
+        "conversions": 0,
+        "clicks": 45,
+        "intent": "informational",
+        "intent_reason": "информационные маркеры: даром"
+      },
+      "threshold": {
+        "name": "минимальный расход без конверсий",
+        "value": 1000.0,
+        "unit": "RUB"
+      },
+      "classification": "fact",
+      "priority": "P2",
+      "confidence": "high",
+      "why": "Запрос израсходовал 1 800,00 ₽ и не дал конверсий. Класс запроса: informational (информационные маркеры: даром).",
+      "alternatives": [
+        "конверсия могла не дойти из-за трекинга",
+        "запрос относится к другому этапу воронки",
+        "малый объём для вывода"
+      ],
+      "next_step": "Проверить, есть ли по запросу заявки в Метрике и CRM за тот же период.",
+      "spend": {
+        "actual": 1800.0,
+        "at_risk": 1800.0,
+        "potential_saving": null
+      },
+      "recommendation_id": null
+    },
+    {
+      "id": "F-008",
+      "rule_id": "SQ-01",
+      "category": "search_queries",
+      "title": "Запрос без конверсий: «работа монтажником окон»",
+      "object": {
+        "type": "search_query",
+        "id": "работа монтажником окон",
+        "path": "campaign:87654321/query:работа монтажником окон"
+      },
+      "evidence": [
+        {
+          "source": "stats_search_queries",
+          "field": "Cost",
+          "value": 1400.0
+        },
+        {
+          "source": "stats_search_queries",
+          "field": "Conversions",
+          "value": 0
+        },
+        {
+          "source": "intent",
+          "field": "class",
+          "value": "irrelevant"
+        },
+        {
+          "source": "intent",
+          "field": "reason",
+          "value": "совпадение с контекстом исключений: работа"
+        }
+      ],
+      "metrics": {
+        "cost": 1400.0,
+        "conversions": 0,
+        "clicks": 40,
+        "intent": "irrelevant",
+        "intent_reason": "совпадение с контекстом исключений: работа"
+      },
+      "threshold": {
+        "name": "минимальный расход без конверсий",
+        "value": 1000.0,
+        "unit": "RUB"
+      },
+      "classification": "fact",
+      "priority": "P2",
+      "confidence": "high",
+      "why": "Запрос израсходовал 1 400,00 ₽ и не дал конверсий. Класс запроса: irrelevant (совпадение с контекстом исключений: работа).",
+      "alternatives": [
+        "конверсия могла не дойти из-за трекинга",
+        "запрос относится к другому этапу воронки",
+        "малый объём для вывода"
+      ],
+      "next_step": "Проверить, есть ли по запросу заявки в Метрике и CRM за тот же период.",
+      "spend": {
+        "actual": 1400.0,
+        "at_risk": 1400.0,
+        "potential_saving": null
+      },
+      "recommendation_id": "R-006"
+    },
+    {
+      "id": "F-009",
+      "rule_id": "KW-01",
+      "category": "keywords",
+      "title": "Фраза без конверсий: «окна даром»",
+      "object": {
+        "type": "keyword",
+        "id": "окна даром",
+        "path": "campaign:87654321/keyword:окна даром"
+      },
+      "evidence": [
+        {
+          "source": "stats_keywords",
+          "field": "Cost",
+          "value": 1800.0
+        },
+        {
+          "source": "stats_keywords",
+          "field": "Conversions",
+          "value": 0
+        }
+      ],
+      "metrics": {
+        "cost": 1800.0,
+        "clicks": 45,
+        "conversions": 0
+      },
+      "threshold": {
+        "name": "минимальный расход без конверсий",
+        "value": 1000.0,
+        "unit": "RUB"
+      },
+      "classification": "fact",
+      "priority": "P2",
+      "confidence": "medium",
+      "why": "Фраза израсходовала 1 800,00 ₽ без конверсий. Пауза или переработка — решение после проверки объёма.",
+      "alternatives": [
+        "конверсии приходят с задержкой",
+        "фраза нужна для охвата"
+      ],
+      "next_step": "Сверить с поисковыми запросами: возможно, мусор внутри фразы, а не сама фраза.",
+      "spend": {
+        "actual": 1800.0,
+        "at_risk": 1800.0,
+        "potential_saving": null
+      },
+      "recommendation_id": null
+    },
+    {
+      "id": "F-010",
+      "rule_id": "KW-01",
+      "category": "keywords",
+      "title": "Фраза без конверсий: «балконы эконом»",
+      "object": {
+        "type": "keyword",
+        "id": "балконы эконом",
+        "path": "campaign:87654321/keyword:балконы эконом"
+      },
+      "evidence": [
+        {
+          "source": "stats_keywords",
+          "field": "Cost",
+          "value": 3100.0
+        },
+        {
+          "source": "stats_keywords",
+          "field": "Conversions",
+          "value": 0
+        }
+      ],
+      "metrics": {
+        "cost": 3100.0,
+        "clicks": 80,
+        "conversions": 0
+      },
+      "threshold": {
+        "name": "минимальный расход без конверсий",
+        "value": 1000.0,
+        "unit": "RUB"
+      },
+      "classification": "fact",
+      "priority": "P2",
+      "confidence": "medium",
+      "why": "Фраза израсходовала 3 100,00 ₽ без конверсий. Пауза или переработка — решение после проверки объёма.",
+      "alternatives": [
+        "конверсии приходят с задержкой",
+        "фраза нужна для охвата"
+      ],
+      "next_step": "Сверить с поисковыми запросами: возможно, мусор внутри фразы, а не сама фраза.",
+      "spend": {
+        "actual": 3100.0,
+        "at_risk": 3100.0,
+        "potential_saving": null
+      },
+      "recommendation_id": null
+    },
+    {
+      "id": "F-011",
+      "rule_id": "NEG-03",
+      "category": "negatives",
+      "title": "Минус-фраза не работает: «даром»",
+      "object": {
+        "type": "negative",
+        "id": "даром"
+      },
+      "evidence": [
+        {
+          "source": "negatives_audit",
+          "field": "negative",
+          "value": "даром"
+        },
+        {
+          "source": "keywords",
+          "field": "keyword",
+          "value": "окна даром"
+        }
+      ],
+      "metrics": {
+        "level": "87654321"
+      },
+      "threshold": null,
+      "classification": "fact",
+      "priority": "P3",
+      "confidence": "high",
+      "why": "минус полностью пересекается с фразой и игнорируется. Показ по этой фразе продолжится.",
+      "alternatives": [],
+      "next_step": "Уточнить минус-фразу или добавить слово, которого нет в целевой фразе.",
+      "spend": {
+        "actual": null,
+        "at_risk": null,
+        "potential_saving": null
+      },
+      "recommendation_id": null
+    },
+    {
+      "id": "F-012",
+      "rule_id": "RSY-02",
+      "category": "rsy_placements",
+      "title": "Площадка без конверсий ниже порога: video-fun.example",
+      "object": {
+        "type": "placement",
+        "id": "video-fun.example",
+        "path": "campaign:87654321/placement:video-fun.example"
+      },
+      "evidence": [
+        {
+          "source": "stats_placements",
+          "field": "Cost",
+          "value": 2700.0
+        },
+        {
+          "source": "stats_placements",
+          "field": "Conversions",
+          "value": 0
+        },
+        {
+          "source": "threshold",
+          "field": "2x_cpa",
+          "value": 2920.0
+        }
+      ],
+      "metrics": {
+        "cost": 2700.0,
+        "conversions": 0,
+        "threshold": 2920.0,
+        "clicks": 300
+      },
+      "threshold": {
+        "name": "2 × CPA",
+        "value": 2920.0,
+        "unit": "RUB",
+        "meaning": "порог внимания: ниже порога исключение не обосновано"
+      },
+      "classification": "fact",
+      "priority": "P3",
+      "confidence": "low",
+      "why": "Расход 2 700,00 ₽ ниже порога 2 920,00 ₽: исключение по порогу не обосновано. Площадка остаётся под наблюдением.",
+      "alternatives": [
+        "мало данных",
+        "конверсии придут позже"
+      ],
+      "next_step": "Наблюдать; вернуться к вопросу при расходе выше порога.",
+      "spend": {
+        "actual": 2700.0,
+        "at_risk": null,
+        "potential_saving": null
+      },
+      "recommendation_id": null
+    },
+    {
+      "id": "F-013",
+      "rule_id": "RSY-01",
+      "category": "rsy_placements",
+      "title": "Площадка дороже порога внимания: shop-fun.example",
+      "object": {
+        "type": "placement",
+        "id": "shop-fun.example",
+        "path": "campaign:87654321/placement:shop-fun.example"
+      },
+      "evidence": [
+        {
+          "source": "stats_placements",
+          "field": "Cost",
+          "value": 3200.0
+        },
+        {
+          "source": "stats_placements",
+          "field": "Conversions",
+          "value": 0
+        },
+        {
+          "source": "stats_compare",
+          "field": "CPA",
+          "value": 1460.0
+        }
+      ],
+      "metrics": {
+        "cost": 3200.0,
+        "conversions": 0,
+        "campaign_cpa": 1460.0,
+        "clicks": 400,
+        "ctr": 0.57
+      },
+      "threshold": {
+        "name": "2 × CPA",
+        "value": 2920.0,
+        "unit": "RUB",
+        "meaning": "порог внимания, а не основание для исключения"
+      },
+      "classification": "fact",
+      "priority": "P1",
+      "confidence": "medium",
+      "why": "Расход 3 200,00 ₽ ≥ порога внимания 2 920,00 ₽ при 0 конверсий. Порог показывает, куда смотреть, но не доказывает неэффективность.",
+      "alternatives": [
+        "конверсии не фиксируются на площадке",
+        "площадка работает на верх воронки",
+        "мало кликов для вывода"
+      ],
+      "next_step": "Проверить клики и поведение: при малом числе кликов — наблюдать.",
+      "spend": {
+        "actual": 3200.0,
+        "at_risk": 3200.0,
+        "potential_saving": null
+      },
+      "recommendation_id": "R-007"
+    },
+    {
+      "id": "F-014",
+      "rule_id": "FUN-01",
+      "category": "funnel",
+      "title": "Конверсия по этапам воронки",
+      "object": {
+        "type": "campaign",
+        "id": "87654321"
+      },
+      "evidence": [
+        {
+          "source": "stats_compare",
+          "field": "Клики",
+          "value": 980
+        },
+        {
+          "source": "metrika_direct_cpa",
+          "field": "Visits",
+          "value": 600.0
+        },
+        {
+          "source": "stats_compare",
+          "field": "Конверсии",
+          "value": 26
+        }
+      ],
+      "metrics": {
+        "clicks": 980,
+        "visits": 600.0,
+        "leads": 26,
+        "cr_click_pct": 2.6530612244897958,
+        "cr_visit_pct": 4.333333333333334,
+        "cost": 37960.0
+      },
+      "threshold": null,
+      "classification": "fact",
+      "priority": "P2",
+      "confidence": "medium",
+      "why": "Из 980 кликов визитов 600.0, заявок 26. Разница между кликами и визитами и между визитами и заявками — разные потери.",
+      "alternatives": [],
+      "next_step": "Разделить потери: доставка на сайт и конверсия сайта.",
+      "spend": {
+        "actual": null,
+        "at_risk": null,
+        "potential_saving": null
+      },
+      "recommendation_id": null
+    },
+    {
+      "id": "F-015",
+      "rule_id": "FUN-02",
+      "category": "funnel",
+      "title": "ДРР по подтверждённой выручке",
+      "object": {
+        "type": "campaign",
+        "id": "87654321"
+      },
+      "evidence": [
+        {
+          "source": "session.economics",
+          "field": "revenue_rub",
+          "value": 250000
+        },
+        {
+          "source": "stats_compare",
+          "field": "Расход",
+          "value": 37960.0
+        }
+      ],
+      "metrics": {
+        "cost": 37960.0,
+        "revenue": 250000,
+        "drr_pct": 15.184000000000001,
+        "roas": 6.585879873551106
+      },
+      "threshold": null,
+      "classification": "fact",
+      "priority": "P2",
+      "confidence": "high",
+      "why": "ДРР 15.2% при выручке 250 000,00 ₽. Источник выручки — выгрузка пользователя, не оценка.",
+      "alternatives": [],
+      "next_step": "Сверить выручку с бухгалтерией за тот же период.",
+      "spend": {
+        "actual": null,
+        "at_risk": null,
+        "potential_saving": null
+      },
+      "recommendation_id": null
+    },
+    {
+      "id": "F-016",
+      "rule_id": "HIS-01",
+      "category": "history",
+      "title": "В периоде A были изменения кампании",
+      "object": {
+        "type": "campaign",
+        "id": "87654321"
+      },
+      "evidence": [
+        {
+          "source": "campaign_journal",
+          "field": "changes",
+          "value": [
+            {
+              "at": "2026-10-02T12:10:00+03:00",
+              "action": "ads_update",
+              "summary": "1923568665500247917: правка заголовка",
+              "status": "applied",
+              "source": "campaign_journal"
+            },
+            {
+              "at": "2026-09-30T10:05:00+03:00",
+              "action": "keywords_state",
+              "summary": "55501: пауза фразы",
+              "status": "applied",
+              "source": "campaign_journal"
+            }
+          ]
+        }
+      ],
+      "metrics": {
+        "changes_in_period": 2,
+        "changes_total": 2
+      },
+      "threshold": null,
+      "classification": "fact",
+      "priority": "P2",
+      "confidence": "high",
+      "why": "Изменения и динамика совпали по времени. Это последовательность событий, а не доказанная причинная связь.",
+      "alternatives": [
+        "изменение не повлияло на результат",
+        "одновременно изменился спрос"
+      ],
+      "next_step": "Сравнить метрики до и после каждой правки отдельно.",
+      "spend": {
+        "actual": null,
+        "at_risk": null,
+        "potential_saving": null
+      },
+      "recommendation_id": null
+    }
+  ],
+  "recommendations": [
+    {
+      "id": "R-001",
+      "finding_id": "F-002",
+      "rule_id": "TRK-03",
+      "priority": "P0",
+      "confidence": "medium",
+      "problem": "Разрыв между кликами и визитами",
+      "object": {
+        "type": "campaign",
+        "id": "87654321"
+      },
+      "evidence": [
+        {
+          "source": "metrika_direct_cpa",
+          "field": "ClicksToVisits",
+          "value": 61.2
+        },
+        {
+          "source": "metrika_direct_cpa",
+          "field": "Clicks",
+          "value": 980
+        },
+        {
+          "source": "metrika_direct_cpa",
+          "field": "Visits",
+          "value": 600
+        }
+      ],
+      "proposed_change": "Проверить разметку ссылок, редиректы и загрузку страницы на мобильных; сверить тестовый клик в Метрике.",
+      "expected_effect": {
+        "type": "qualitative",
+        "value": null,
+        "unit": null,
+        "method": "диагностика",
+        "conditions": [
+          "нужен доступ к сайту и счётчику"
+        ]
+      },
+      "risk": {
+        "level": "low",
+        "notes": [
+          "правки на сайте вне зоны MCP-аудита"
+        ]
+      },
+      "apply": {
+        "method": "manual",
+        "tool": null,
+        "manual": "сайт / Метрика / Директ"
+      },
+      "verify": {
+        "baseline_period": {
+          "from": "2026-09-26",
+          "to": "2026-10-09"
+        },
+        "control_metrics": [
+          "визиты",
+          "доля визитов от кликов"
+        ],
+        "expected_direction": "рост доли визитов",
+        "sufficiency": {
+          "min_impressions": 1000,
+          "min_clicks": 100,
+          "min_conversions": 10,
+          "note": "вывод делать только при наборе объёма; иначе — наблюдать"
+        },
+        "side_effects": [],
+        "success": "доля визитов выросла до 90%+ при том же трафике",
+        "failure": "изменение в пределах колебаний или ухудшение — откатить"
+      },
+      "status": "proposed"
+    },
+    {
+      "id": "R-002",
+      "finding_id": "F-003",
+      "rule_id": "MOD-01",
+      "priority": "P0",
+      "confidence": "high",
+      "problem": "Отклонён объект 1923568665500247917",
+      "object": {
+        "type": "ad",
+        "id": "1923568665500247917",
+        "path": "campaign:87654321/ad:1923568665500247917"
+      },
+      "evidence": [
+        {
+          "source": "moderation_check",
+          "field": "Status",
+          "value": "REJECTED"
+        },
+        {
+          "source": "moderation_check",
+          "field": "Reason",
+          "value": "превышение лимита заглавных букв"
+        }
+      ],
+      "proposed_change": "Устранить причину отклонения: превышение лимита заглавных букв.",
+      "expected_effect": {
+        "type": "technical",
+        "value": null,
+        "unit": null,
+        "method": "подтверждённый статус модерации",
+        "conditions": []
+      },
+      "risk": {
+        "level": "low",
+        "notes": [
+          "повторное отклонение при неустранённой причине"
+        ]
+      },
+      "apply": {
+        "method": "tool",
+        "tool": "ads_update",
+        "manual": null
+      },
+      "verify": {
+        "baseline_period": {
+          "from": "2026-09-26",
+          "to": "2026-10-09"
+        },
+        "control_metrics": [
+          "статус модерации"
+        ],
+        "expected_direction": "ACCEPTED",
+        "sufficiency": {
+          "min_impressions": 1000,
+          "min_clicks": 100,
+          "min_conversions": 10,
+          "note": "вывод делать только при наборе объёма; иначе — наблюдать"
+        },
+        "side_effects": [],
+        "success": "объект прошёл модерацию",
+        "failure": "отклонён повторно — причина не устранена"
+      },
+      "status": "proposed"
+    },
+    {
+      "id": "R-003",
+      "finding_id": "F-004",
+      "rule_id": "EXT-01",
+      "priority": "P2",
+      "confidence": "high",
+      "problem": "Неполные расширения объявлений",
+      "object": {
+        "type": "ad",
+        "id": "1923568665500247917",
+        "path": "campaign:87654321/ad:1923568665500247917"
+      },
+      "evidence": [
+        {
+          "source": "ads_list",
+          "field": "missing",
+          "value": "Callouts, DisplayUrlPath"
+        },
+        {
+          "source": "ads_list",
+          "field": "ads_checked",
+          "value": 1
+        }
+      ],
+      "proposed_change": "Дописать: отображаемая ссылка, уточнения; тексты — по лимитам Директа.",
+      "expected_effect": {
+        "type": "qualitative",
+        "value": null,
+        "unit": null,
+        "method": "практика CTR, не гарантия",
+        "conditions": [
+          "сохранить релевантность объявления"
+        ]
+      },
+      "risk": {
+        "level": "low",
+        "notes": [
+          "рост CTR может привести к другому составу трафика"
+        ]
+      },
+      "apply": {
+        "method": "tool",
+        "tool": "ads_update",
+        "manual": "extensions_create"
+      },
+      "verify": {
+        "baseline_period": {
+          "from": "2026-09-26",
+          "to": "2026-10-09"
+        },
+        "control_metrics": [
+          "CTR",
+          "CR",
+          "CPA"
+        ],
+        "expected_direction": "CTR вверх, CPA не хуже",
+        "sufficiency": {
+          "min_impressions": 1000,
+          "min_clicks": 100,
+          "min_conversions": 10,
+          "note": "вывод делать только при наборе объёма; иначе — наблюдать"
+        },
+        "side_effects": [
+          "изменение качества трафика"
+        ],
+        "success": "целевой показатель улучшился при сопоставимом объёме трафика",
+        "failure": "изменение в пределах колебаний или ухудшение — откатить"
+      },
+      "status": "proposed"
+    },
+    {
+      "id": "R-004",
+      "finding_id": "F-005",
+      "rule_id": "DYN-01",
+      "priority": "P2",
+      "confidence": "low",
+      "problem": "Конверсии и CPA изменились против прошлого периода",
+      "object": {
+        "type": "campaign",
+        "id": "87654321"
+      },
+      "evidence": [
+        {
+          "source": "stats_compare",
+          "field": "Конверсии",
+          "value": "40 → 26"
+        },
+        {
+          "source": "stats_compare",
+          "field": "CTR",
+          "value": "2.08 → 2.08"
+        },
+        {
+          "source": "stats_compare",
+          "field": "CR",
+          "value": "4.00 → 2.65"
+        },
+        {
+          "source": "stats_compare",
+          "field": "CPA",
+          "value": "950,00 ₽ → 1 460,00 ₽"
+        },
+        {
+          "source": "stats_compare",
+          "field": "проверка значимости",
+          "value": "z=-1.67, p=0.095"
+        }
+      ],
+      "proposed_change": "Не менять настройки вслепую: сначала проверить журнал изменений и сегменты за тот же период.",
+      "expected_effect": {
+        "type": "none",
+        "value": null,
+        "unit": null,
+        "method": "диагностика вместо изменения",
+        "conditions": []
+      },
+      "risk": {
+        "level": "low",
+        "notes": [
+          "поспешная правка ставок может усилить отклонение"
+        ]
+      },
+      "apply": {
+        "method": "manual",
+        "tool": null,
+        "manual": "анализ, без изменений"
+      },
+      "verify": {
+        "baseline_period": {
+          "from": "2026-09-26",
+          "to": "2026-10-09"
+        },
+        "control_metrics": [
+          "конверсии",
+          "CPA",
+          "CR"
+        ],
+        "expected_direction": "возврат к базовому уровню",
+        "sufficiency": {
+          "min_impressions": 1000,
+          "min_clicks": 100,
+          "min_conversions": 10,
+          "note": "вывод делать только при наборе объёма; иначе — наблюдать"
+        },
+        "side_effects": [],
+        "success": "показатели вернулись к уровню B без правок или после точечной правки",
+        "failure": "отклонение сохраняется — причина не найдена"
+      },
+      "status": "proposed"
+    },
+    {
+      "id": "R-005",
+      "finding_id": "F-006",
+      "rule_id": "SEG-01",
+      "priority": "P2",
+      "confidence": "medium",
+      "problem": "Дорогой сегмент: MOBILE",
+      "object": {
+        "type": "device",
+        "id": "MOBILE",
+        "path": "campaign:87654321/device:MOBILE"
+      },
+      "evidence": [
+        {
+          "source": "stats_devices",
+          "field": "CPA",
+          "value": 3000.0
+        },
+        {
+          "source": "stats_compare",
+          "field": "CPA",
+          "value": 1460.0
+        }
+      ],
+      "proposed_change": "Рассмотреть корректировку ставки для сегмента после проверки объёма данных.",
+      "expected_effect": {
+        "type": "qualitative",
+        "value": null,
+        "unit": null,
+        "method": "снижение ставки не гарантирует снижение CPA",
+        "conditions": [
+          "сегмент устойчиво дороже 2 периодов"
+        ]
+      },
+      "risk": {
+        "level": "medium",
+        "notes": [
+          "снижение ставки уменьшит показы и может уменьшить заявки"
+        ]
+      },
+      "apply": {
+        "method": "tool",
+        "tool": "bid_modifiers_set",
+        "manual": null
+      },
+      "verify": {
+        "baseline_period": {
+          "from": "2026-09-26",
+          "to": "2026-10-09"
+        },
+        "control_metrics": [
+          "CPA сегмента",
+          "конверсии сегмента"
+        ],
+        "expected_direction": "CPA вниз, конверсии не падают",
+        "sufficiency": {
+          "min_impressions": 1000,
+          "min_clicks": 100,
+          "min_conversions": 10,
+          "note": "вывод делать только при наборе объёма; иначе — наблюдать"
+        },
+        "side_effects": [
+          "потеря охвата"
+        ],
+        "success": "целевой показатель улучшился при сопоставимом объёме трафика",
+        "failure": "изменение в пределах колебаний или ухудшение — откатить"
+      },
+      "status": "proposed"
+    },
+    {
+      "id": "R-006",
+      "finding_id": "F-008",
+      "rule_id": "SQ-01",
+      "priority": "P2",
+      "confidence": "high",
+      "problem": "Расход без конверсий: «работа монтажником окон»",
+      "object": {
+        "type": "search_query",
+        "id": "работа монтажником окон",
+        "path": "campaign:87654321/query:работа монтажником окон"
+      },
+      "evidence": [
+        {
+          "source": "stats_search_queries",
+          "field": "Cost",
+          "value": 1400.0
+        },
+        {
+          "source": "stats_search_queries",
+          "field": "Conversions",
+          "value": 0
+        },
+        {
+          "source": "intent",
+          "field": "class",
+          "value": "irrelevant"
+        },
+        {
+          "source": "intent",
+          "field": "reason",
+          "value": "совпадение с контекстом исключений: работа"
+        }
+      ],
+      "proposed_change": "Проверить запрос вручную: автоматическая минус-фраза не подобрана без риска для целевого трафика.",
+      "expected_effect": {
+        "type": "none",
+        "value": null,
+        "unit": null,
+        "method": "нужно решение человека",
+        "conditions": []
+      },
+      "risk": {
+        "level": "medium",
+        "notes": [
+          "минус-фраза наугад может отсечь коммерческий трафик"
+        ]
+      },
+      "apply": {
+        "method": "manual",
+        "tool": null,
+        "manual": "проверить запрос и прогноз Директа"
+      },
+      "verify": {
+        "baseline_period": {
+          "from": "2026-09-26",
+          "to": "2026-10-09"
+        },
+        "control_metrics": [
+          "расход",
+          "конверсии"
+        ],
+        "expected_direction": "наблюдение",
+        "sufficiency": {
+          "min_impressions": 1000,
+          "min_clicks": 100,
+          "min_conversions": 10,
+          "note": "вывод делать только при наборе объёма; иначе — наблюдать"
+        },
+        "side_effects": [],
+        "success": "целевой показатель улучшился при сопоставимом объёме трафика",
+        "failure": "изменение в пределах колебаний или ухудшение — откатить"
+      },
+      "status": "proposed"
+    },
+    {
+      "id": "R-007",
+      "finding_id": "F-013",
+      "rule_id": "RSY-01",
+      "priority": "P1",
+      "confidence": "medium",
+      "problem": "Расход на площадке без конверсий: shop-fun.example",
+      "object": {
+        "type": "placement",
+        "id": "shop-fun.example",
+        "path": "campaign:87654321/placement:shop-fun.example"
+      },
+      "evidence": [
+        {
+          "source": "stats_placements",
+          "field": "Cost",
+          "value": 3200.0
+        },
+        {
+          "source": "stats_placements",
+          "field": "Conversions",
+          "value": 0
+        },
+        {
+          "source": "stats_compare",
+          "field": "CPA",
+          "value": 1460.0
+        }
+      ],
+      "proposed_change": "Кандидат на исключение: добавить площадку в исключённые вручную, предварительно проверив трафик.",
+      "expected_effect": {
+        "type": "estimate",
+        "value": 3200.0,
+        "unit": "RUB/период",
+        "method": "расход площадки за период A при полном исключении",
+        "conditions": [
+          "исключение поддерживается типом кампании",
+          "площадка не даёт конверсий в других целях"
+        ]
+      },
+      "risk": {
+        "level": "medium",
+        "notes": [
+          "в ЕПК исключение площадок ограничено",
+          "потеря охвата",
+          "возможны конверсии с задержкой"
+        ]
+      },
+      "apply": {
+        "method": "manual",
+        "tool": null,
+        "manual": "Директ → кампания → Исключённые площадки (текущий список через API не читается — автоматическая замена небезопасна)"
+      },
+      "verify": {
+        "baseline_period": {
+          "from": "2026-09-26",
+          "to": "2026-10-09"
+        },
+        "control_metrics": [
+          "расход",
+          "конверсии",
+          "CPA"
+        ],
+        "expected_direction": "расход вниз, конверсии не падают",
+        "sufficiency": {
+          "min_impressions": 1000,
+          "min_clicks": 100,
+          "min_conversions": 10,
+          "note": "вывод делать только при наборе объёма; иначе — наблюдать"
+        },
+        "side_effects": [
+          "сокращение охвата"
+        ],
+        "success": "целевой показатель улучшился при сопоставимом объёме трафика",
+        "failure": "изменение в пределах колебаний или ухудшение — откатить"
+      },
+      "status": "proposed"
+    }
+  ],
+  "hypotheses": [
+    {
+      "id": "H-01",
+      "title": "Причина падения конверсий не установлена",
+      "statement": "Снижение конверсий согласуется с падением CR, но причинность не доказана.",
+      "classification": "hypothesis",
+      "basis": [
+        "CR: 4.00% → 2.65%",
+        "CTR: 2.08% → 2.08%"
+      ],
+      "alternatives": [
+        "спрос",
+        "состав трафика",
+        "сайт/форма",
+        "трекинг"
+      ],
+      "check": "Сравнить те же метрики по устройствам и площадкам; исключить изменения в журнале кампании.",
+      "priority": "P2",
+      "source_finding": "F-005"
+    },
+    {
+      "id": "H-02",
+      "title": "Информационный запрос «окна даром»",
+      "statement": "Информационный запрос не считается мусором автоматически: он может быть частью пути к заявке.",
+      "classification": "hypothesis",
+      "basis": [
+        "расход 1 800,00 ₽",
+        "0 конверсий в модели последнего клика"
+      ],
+      "alternatives": [
+        "запрос участвует в цепочке касаний",
+        "конверсия придёт позже"
+      ],
+      "check": "Посмотреть assisted conversions и путь к конверсии в Метрике.",
+      "priority": "P3",
+      "source_finding": "F-007"
+    },
+    {
+      "id": "H-03",
+      "title": "Минус-фраза для «работа монтажником окон» не подобрана автоматически",
+      "statement": "нет безопасного кандидата: слова запроса либо защищены, либо не входят в заданный контекст исключений, либо минус не сработает или отсечёт конверсии",
+      "classification": "hypothesis",
+      "basis": [
+        "расход 1 400,00 ₽",
+        "0 конверсий",
+        "интент: irrelevant"
+      ],
+      "alternatives": [
+        "запрос нужен на другом этапе воронки",
+        "конверсии не фиксируются"
+      ],
+      "check": "Сверить запрос с продуктом и прогнозом Директа вручную.",
+      "priority": "P3",
+      "source_finding": "F-008"
+    }
+  ],
+  "growth": [
+    {
+      "id": "G-query-купить_окна_пвх",
+      "type": "search_intent",
+      "object": {
+        "type": "search_query",
+        "id": "купить окна пвх"
+      },
+      "evidence": [
+        {
+          "source": "stats_search_queries",
+          "field": "CPA",
+          "value": 1010.0
+        },
+        {
+          "source": "stats_compare",
+          "field": "CPA",
+          "value": 1460.0
+        }
+      ],
+      "why": "Запрос даёт CPA 1 010,00 ₽ против среднего 1 460,00 ₽.",
+      "confidence": "medium",
+      "action": "Проверить, вынесен ли запрос в отдельную фразу или группу.",
+      "promise": "рост заявок не гарантируется"
+    }
+  ],
+  "spend_accounting": {
+    "actual_spend_rub": 37960.0,
+    "candidate_actual_spend": {
+      "sum": null,
+      "sum_by_type": {
+        "device": 24000.0,
+        "search_query": 3200.0,
+        "keyword": 4900.0,
+        "placement": 5900.0
+      },
+      "objects": [
+        {
+          "path": "campaign:87654321/device:MOBILE",
+          "value": 24000.0,
+          "finding_id": "F-006",
+          "type": "device"
+        },
+        {
+          "path": "campaign:87654321/query:окна даром",
+          "value": 1800.0,
+          "finding_id": "F-007",
+          "type": "search_query"
+        },
+        {
+          "path": "campaign:87654321/query:работа монтажником окон",
+          "value": 1400.0,
+          "finding_id": "F-008",
+          "type": "search_query"
+        },
+        {
+          "path": "campaign:87654321/keyword:окна даром",
+          "value": 1800.0,
+          "finding_id": "F-009",
+          "type": "keyword"
+        },
+        {
+          "path": "campaign:87654321/keyword:балконы эконом",
+          "value": 3100.0,
+          "finding_id": "F-010",
+          "type": "keyword"
+        },
+        {
+          "path": "campaign:87654321/placement:video-fun.example",
+          "value": 2700.0,
+          "finding_id": "F-012",
+          "type": "placement"
+        },
+        {
+          "path": "campaign:87654321/placement:shop-fun.example",
+          "value": 3200.0,
+          "finding_id": "F-013",
+          "type": "placement"
+        }
+      ],
+      "overlaps": [],
+      "overlap_free": true,
+      "summed": false,
+      "mixed_levels": [
+        "device",
+        "keyword",
+        "placement",
+        "search_query"
+      ],
+      "note": "объекты разных типов описывают разные разрезы одного бюджета: общая сумма не считается"
+    },
+    "at_risk_spend": {
+      "sum": null,
+      "sum_by_type": {
+        "search_query": 3200.0,
+        "keyword": 4900.0,
+        "placement": 3200.0
+      },
+      "objects": [
+        {
+          "path": "campaign:87654321/query:окна даром",
+          "value": 1800.0,
+          "finding_id": "F-007",
+          "type": "search_query"
+        },
+        {
+          "path": "campaign:87654321/query:работа монтажником окон",
+          "value": 1400.0,
+          "finding_id": "F-008",
+          "type": "search_query"
+        },
+        {
+          "path": "campaign:87654321/keyword:окна даром",
+          "value": 1800.0,
+          "finding_id": "F-009",
+          "type": "keyword"
+        },
+        {
+          "path": "campaign:87654321/keyword:балконы эконом",
+          "value": 3100.0,
+          "finding_id": "F-010",
+          "type": "keyword"
+        },
+        {
+          "path": "campaign:87654321/placement:shop-fun.example",
+          "value": 3200.0,
+          "finding_id": "F-013",
+          "type": "placement"
+        }
+      ],
+      "overlaps": [],
+      "overlap_free": true,
+      "summed": false,
+      "mixed_levels": [
+        "keyword",
+        "placement",
+        "search_query"
+      ],
+      "note": "объекты разных типов описывают разные разрезы одного бюджета: общая сумма не считается"
+    },
+    "potential_saving": {
+      "value": 3200.0,
+      "sum_by_type": {
+        "placement": 3200.0
+      },
+      "unit": "RUB/период",
+      "conditional": true,
+      "method": "сумма расходов объектов из оценок рекомендаций; это оценка, а не гарантия экономии",
+      "items": [
+        {
+          "path": "campaign:87654321/placement:shop-fun.example",
+          "value": 3200.0,
+          "recommendation_id": "R-007",
+          "unit": "RUB/период",
+          "method": "расход площадки за период A при полном исключении",
+          "type": "placement"
+        }
+      ],
+      "overlaps": [],
+      "overlap_free": true,
+      "mixed_levels": []
+    },
+    "note": "фактический расход, расход под риском и потенциальная экономия — разные величины; экономия — оценка, а не гарантия"
+  },
+  "history": {
+    "available": true,
+    "changes": [
+      {
+        "at": "2026-10-02T12:10:00+03:00",
+        "action": "ads_update",
+        "summary": "1923568665500247917: правка заголовка",
+        "status": "applied",
+        "source": "campaign_journal"
+      },
+      {
+        "at": "2026-09-30T10:05:00+03:00",
+        "action": "keywords_state",
+        "summary": "55501: пауза фразы",
+        "status": "applied",
+        "source": "campaign_journal"
+      }
+    ],
+    "notes": "нет данных",
+    "changes_check": [
+      {
+        "status": "Изменён",
+        "type": "Ad",
+        "id": "1923568665500247917",
+        "date": "2026-10-02"
+      },
+      {
+        "status": "Изменён",
+        "type": "AdGroup",
+        "id": "55501",
+        "date": "2026-09-30"
+      }
+    ],
+    "note": null
+  },
+  "monitor": null,
+  "funnel": {
+    "stages": {
+      "impressions": 47200,
+      "clicks": 980,
+      "visits": 600.0,
+      "leads": 26,
+      "qualified_leads": null,
+      "sales": null
+    },
+    "missing": [
+      "qualified_leads",
+      "sales"
+    ],
+    "economics": {
+      "revenue_rub": 250000,
+      "gross_margin_rub": 90000
+    },
+    "eligibility": [
+      {
+        "id": "EX-funnel-заявка",
+        "name": "заявка",
+        "metric": "CPA",
+        "unit": "RUB",
+        "value": 1460.0
+      },
+      {
+        "id": "EX-funnel-квалифицирован",
+        "name": "квалифицированный лид",
+        "metric": "CPA",
+        "unit": "RUB",
+        "value": 1460.0
+      },
+      {
+        "id": "EX-funnel-продажа",
+        "name": "продажа",
+        "metric": "CPA",
+        "unit": "RUB",
+        "value": 1460.0
+      }
+    ]
+  },
+  "experiments": [
+    {
+      "id": "EXP-H-01",
+      "hypothesis_id": "H-01",
+      "statement": "Снижение конверсий согласуется с падением CR, но причинность не доказана.",
+      "metric": "CPA",
+      "baseline": 1460.0,
+      "start_condition": "не менять другие настройки кампании в период теста",
+      "stop_condition": "остановить при падении конверсий более чем на 30% или росте CPA более чем на 50%",
+      "min_duration_days": 14,
+      "sufficiency": {
+        "min_clicks": 100,
+        "min_conversions": 10
+      },
+      "success": "CPA ниже базового при сопоставимом объёме",
+      "failure": "CPA не изменился или вырос"
+    },
+    {
+      "id": "EXP-H-02",
+      "hypothesis_id": "H-02",
+      "statement": "Информационный запрос не считается мусором автоматически: он может быть частью пути к заявке.",
+      "metric": "CPA",
+      "baseline": 1460.0,
+      "start_condition": "не менять другие настройки кампании в период теста",
+      "stop_condition": "остановить при падении конверсий более чем на 30% или росте CPA более чем на 50%",
+      "min_duration_days": 14,
+      "sufficiency": {
+        "min_clicks": 100,
+        "min_conversions": 10
+      },
+      "success": "CPA ниже базового при сопоставимом объёме",
+      "failure": "CPA не изменился или вырос"
+    },
+    {
+      "id": "EXP-H-03",
+      "hypothesis_id": "H-03",
+      "statement": "нет безопасного кандидата: слова запроса либо защищены, либо не входят в заданный контекст исключений, либо минус не сработает или отсечёт конверсии",
+      "metric": "CPA",
+      "baseline": 1460.0,
+      "start_condition": "не менять другие настройки кампании в период теста",
+      "stop_condition": "остановить при падении конверсий более чем на 30% или росте CPA более чем на 50%",
+      "min_duration_days": 14,
+      "sufficiency": {
+        "min_clicks": 100,
+        "min_conversions": 10
+      },
+      "success": "CPA ниже базового при сопоставимом объёме",
+      "failure": "CPA не изменился или вырос"
+    }
+  ],
+  "mode_status": {
+    "quick": {
+      "available": true,
+      "reason": null,
+      "missing_sources": [],
+      "selected": false
+    },
+    "deep": {
+      "available": true,
+      "reason": null,
+      "missing_sources": [],
+      "selected": true
+    },
+    "semantic": {
+      "available": true,
+      "reason": null,
+      "missing_sources": [],
+      "selected": false
+    },
+    "rsy": {
+      "available": true,
+      "reason": null,
+      "missing_sources": [],
+      "selected": false
+    },
+    "funnel": {
+      "available": true,
+      "reason": null,
+      "missing_sources": [],
+      "selected": false
+    },
+    "growth": {
+      "available": true,
+      "reason": null,
+      "missing_sources": [],
+      "selected": false
+    },
+    "monitor": {
+      "available": false,
+      "reason": "нет предыдущего снимка аудита",
+      "missing_sources": [],
+      "selected": false
+    },
+    "experiment": {
+      "available": true,
+      "reason": null,
+      "missing_sources": [],
+      "selected": false
+    }
+  },
+  "monitor_compatibility": null,
+  "limitations": [
+    {
+      "id": "L-01",
+      "text": "Состояние обучения стратегии через API не читается: выводы о работе алгоритма не делаются",
+      "detail": "",
+      "group": "strategy"
+    },
+    {
+      "id": "L-02",
+      "text": "Сегментных сравнений: 4. Порог значимости с поправкой Бонферрони: 0.0125",
+      "detail": "множественные сравнения повышают риск ложных срабатываний",
+      "group": "segments"
+    },
+    {
+      "id": "L-03",
+      "text": "Покрытие запросов ключевыми фразами не проверяется: в stats_search_queries нет привязки запроса к фразе",
+      "detail": "",
+      "group": "semantic"
+    },
+    {
+      "id": "L-04",
+      "text": "Площадка video-fun.example ниже порога — только наблюдение",
+      "detail": "",
+      "group": "rsy"
+    },
+    {
+      "id": "L-05",
+      "text": "Площадок ниже порога без конверсий: 1 — наблюдение, не исключение",
+      "detail": "",
+      "group": "rsy"
+    },
+    {
+      "id": "L-06",
+      "text": "Воронка неполная: нет этапов qualified_leads, sales",
+      "detail": "",
+      "group": "funnel"
+    }
+  ],
+  "validation": {
+    "status": "PASS",
+    "issues": [],
+    "summary": {
+      "errors": 0,
+      "warnings": 0
+    }
+  }
+}

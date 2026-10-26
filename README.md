@@ -827,6 +827,11 @@ directai-mcp doctor --preinstall   # строгая проверка перед 
 (`skills/directai-connection-doctor/`); установка локально — скопировать
 папку в `%USERPROFILE%\.agents\skills\directai-connection-doctor`.
 
+Версии сверяются скриптом `skills/directai-connection-doctor/scripts/check-versions.ps1`:
+он читает `metadata.directai_mcp` из скиллов и сравнивает с `directai-mcp --version`.
+Сервер новее — WARN (перед записью перепроверить `describe_action`),
+сервер старее — FAIL (write не выполнять).
+
 ## 8.2. Скиллы сценариев (v1.11.0)
 
 - `directai-campaign-audit` (`skills/directai-campaign-audit/`): разбор кампании —

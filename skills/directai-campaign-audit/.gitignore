@@ -1,0 +1,19 @@
+# Генерируемые отчёты аудита
+reports/
+reports/**/*.md
+reports/**/*.xlsx
+reports/**/*.html
+reports/**/*.json
+
+# Сырые выгрузки DirectAI MCP и временные файлы сессий
+raw/
+exports/
+*.local.json
+*.tmp
+tests/.tmp/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
