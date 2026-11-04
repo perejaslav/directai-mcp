@@ -12,7 +12,7 @@ directai-mcp check
 токен из Credential Manager (`directai-mcp set-token`) и конфиг из
 `%USERPROFILE%\.directai\accounts.toml`. Логи — только в файл и stderr,
 stdout занят протоколом MCP. Запись идёт через `plan_write` → ваше
-подтверждение → `apply_write` (подробности в README.md §5–6).
+подтверждение → `apply_write` (подробности — `docs/safety.md`).
 
 ## Claude Desktop
 
