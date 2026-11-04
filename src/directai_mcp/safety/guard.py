@@ -520,15 +520,25 @@ def combat_allowed(action: str, params: dict) -> bool:
         return params.get("mode", "add") == "add" \
             and not params.get("update_shared_set")
     if action == "campaigns_update":
-        return params.get("excluded_sites") is not None \
-            and params.get("end_date") is None \
-            and params.get("negatives") is None \
-            and params.get("strategy") is None \
-            and params.get("tracking_params") is None \
-            and params.get("name") is None \
-            and params.get("daily_budget") is None \
-            and params.get("priority_goals") is None \
+        # v1.17.4: расписание показов — обычная настройка, разрешена в боевой
+        # (как и ExcludedSites add); остальное по-прежнему TEST-only.
+        only_safe = (
+            params.get("end_date") is None
+            and params.get("negatives") is None
+            and params.get("strategy") is None
+            and params.get("tracking_params") is None
+            and params.get("name") is None
+            and params.get("daily_budget") is None
+            and params.get("priority_goals") is None
             and not params.get("priority_goals_reset")
+        )
+        touches_schedule = (
+            params.get("schedule") is not None
+            or bool(params.get("schedule_off"))
+        )
+        return only_safe and (
+            params.get("excluded_sites") is not None or touches_schedule
+        )
     if action == "adgroups_update":
         groups = params.get("groups") or []
         if not groups:

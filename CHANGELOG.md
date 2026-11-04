@@ -5,7 +5,7 @@
 - `directai-connection-doctor`: шаг сверки версий в порядке работы,
   `scripts/check-versions.ps1` (читает `metadata.directai_mcp`, сравнивает
   с `directai-mcp --version`, коды 0/2/1), playbook на WARN и FAIL.
-- Все скиллы семейства объявляют `metadata.directai_mcp: "1.17.3"`.
+- Все скиллы семейства объявляют `metadata.directai_mcp: "1.17.4"`.
 - `directai-campaign-audit` догнал локальную v2.0: `scripts/auditlib/`,
   тесты (198), примеры, реестр действий `references/tool-contract.md`.
   Раньше в репозитории лежала тонкая версия на 3 файла.
@@ -13,6 +13,17 @@
   «v1.11»; правило про сверку версии перед первым `plan_write`.
 - `playbooks.md`: ссылка на `examples/harness-configs.md` помечена как путь
   репозитория — рядом с установленным скиллом этой папки нет.
+
+## v1.17.4 (2026-11-04) — запись расписания показов
+
+- `campaigns_update` получил `schedule` (`days` 1–7 и часы: интервал
+  `from_hour`–`to_hour` или список `hours`) и `schedule_off` — снять
+  ограничение, круглосуточно. Раньше `TimeTargeting` только читался.
+- В теле уходят все семь дней, текущие `ConsiderWorkingWeekends` и
+  `HolidaysSchedule`; ставки по часам не поддерживаются — включённый час
+  пишется как 100%. В боевой кампании смена расписания разрешена.
+- Превью «было → станет», read-back сверяет часы по дням. Тесты:
+  `tests/test_v1174_schedule.py` (17).
 
 ## v1.17.3 (2026-11-04) — справочник интересов в dictionaries_get
 

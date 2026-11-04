@@ -2,7 +2,7 @@
 name: "directai-campaign-create"
 description: "Создание кампании Яндекс Директа из описания или YAML: бриф, структура, прогноз спроса, запись через планы. Триггеры: создай кампанию, описание товара/услуги, YAML-файл."
 metadata:
-  directai_mcp: "1.17.3"
+  directai_mcp: "1.17.4"
 ---
 
 # DirectAI Campaign Create

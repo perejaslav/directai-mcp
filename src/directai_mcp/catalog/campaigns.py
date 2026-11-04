@@ -1095,8 +1095,111 @@ def _check_goal_ids(goals: list[PriorityGoal]) -> None:
         )
 
 
+class ScheduleSpec(BaseModel):
+    """Расписание показов: дни 1–7 (Пн=1) и часы 0–23.
+
+    Часы задаются либо списком `hours`, либо интервалом
+    `from_hour`–`to_hour` (конец — граница, как в интерфейсе:
+    10:00–19:00 — это часы 10..18).
+    """
+
+    days: list[int] = Field(min_length=1, max_length=7)
+    from_hour: int | None = Field(default=None, ge=0, le=23)
+    to_hour: int | None = Field(default=None, ge=1, le=24)
+    hours: list[int] | None = None
+
+    @model_validator(mode="after")
+    def _check(self) -> ScheduleSpec:
+        days = list(self.days)
+        if len(set(days)) != len(days):
+            raise ValueError("schedule.days: дни повторяются.")
+        bad = [d for d in days if not 1 <= d <= 7]
+        if bad:
+            raise ValueError(
+                f"schedule.days: вне 1..7 (Пн=1): {bad}.")
+        if self.hours is not None and (
+            self.from_hour is not None or self.to_hour is not None
+        ):
+            raise ValueError(
+                "schedule: укажите либо hours, либо from_hour+to_hour.")
+        if self.hours is not None:
+            hours = list(self.hours)
+            if not hours:
+                raise ValueError("schedule.hours: пустой список.")
+            if len(set(hours)) != len(hours):
+                raise ValueError("schedule.hours: часы повторяются.")
+            bad = [h for h in hours if not 0 <= h <= 23]
+            if bad:
+                raise ValueError(f"schedule.hours: вне 0..23: {bad}.")
+            return self
+        if self.from_hour is None or self.to_hour is None:
+            raise ValueError("schedule: нужны hours либо from_hour и to_hour.")
+        if self.from_hour >= self.to_hour:
+            raise ValueError(
+                "schedule: from_hour должен быть меньше to_hour "
+                f"({self.from_hour}–{self.to_hour}).")
+        return self
+
+
+def _schedule_hours(spec: ScheduleSpec | dict) -> list[int]:
+    """Часы показа из ScheduleSpec или его дампа (params плана)."""
+    if isinstance(spec, dict):
+        explicit = spec.get("hours")
+        start, stop = spec.get("from_hour"), spec.get("to_hour")
+    else:
+        explicit = spec.hours
+        start, stop = spec.from_hour, spec.to_hour
+    if explicit is not None:
+        return sorted({int(h) for h in explicit})
+    return list(range(int(start), int(stop)))
+
+
+def _schedule_items(days: list[int], hours: list[int]) -> list[str]:
+    """Schedule.Items API: «D,h0..h23», где 100 — час включён, 0 — выключен.
+
+    Все семь дней: день без показов — строка из нулей.
+    """
+    chosen = set(hours)
+    on = set(days)
+    return [
+        ",".join(
+            [str(d)] + ["100" if (h in chosen and d in on) else "0"
+                        for h in range(24)]
+        )
+        for d in range(1, 8)
+    ]
+
+
+def _schedule_slots(time_targeting: object) -> set[tuple[int, int]]:
+    """Пары (день, час) с показами из ответа Campaigns.get."""
+    tt = time_targeting if isinstance(time_targeting, dict) else {}
+    sched = tt.get("Schedule")
+    if isinstance(sched, dict):
+        items = sched.get("Items") or []
+    elif isinstance(sched, list):
+        items = sched
+    else:
+        items = []
+    slots: set[tuple[int, int]] = set()
+    for raw in items:
+        try:
+            nums = [int(p) for p in str(raw).split(",")]
+        except ValueError:
+            continue
+        if len(nums) != 25 or not 1 <= nums[0] <= 7:
+            continue
+        for hour, pct in enumerate(nums[1:]):
+            if pct > 0:
+                slots.add((nums[0], hour))
+    return slots
+
+
 class CampaignsUpdateParams(GetActionParams):
     campaign_ids: list[int] = Field(min_length=1)
+    # v1.17.4: расписание показов (TimeTargeting.Schedule). schedule_off —
+    # снять ограничение (круглосуточно, все дни). Взаимоисключающие.
+    schedule: ScheduleSpec | None = None
+    schedule_off: bool = False
     end_date: str | None = None
     negatives: list[str] | None = None
     strategy: dict | None = None
@@ -1322,6 +1425,17 @@ async def _prepare_campaigns_update(
         _rec, _warns = validate_tracking_macros(params.tracking_params)
         track_warnings.extend(_warns)
     given: dict = {}
+    schedule_wanted = params.schedule is not None or params.schedule_off
+    if params.schedule is not None and params.schedule_off:
+        raise ValueError(
+            "schedule и schedule_off взаимоисключающие: либо новое "
+            "расписание, либо снятие ограничения (круглосуточно).")
+    if schedule_wanted:
+        want_hours = (_schedule_hours(params.schedule)
+                      if params.schedule is not None else list(range(24)))
+        want_days = (list(params.schedule.days)
+                     if params.schedule is not None else list(range(1, 8)))
+        given["_time_targeting"] = {"days": want_days, "hours": want_hours}
     if params.end_date is not None:
         given["EndDate"] = params.end_date
     if params.negatives is not None:
@@ -1359,8 +1473,8 @@ async def _prepare_campaigns_update(
     if not given:
         raise ValueError(
             "укажите end_date, negatives, strategy, excluded_sites, "
-            "tracking_params, name, daily_budget, priority_goals "
-            "или priority_goals_reset.")
+            "tracking_params, name, daily_budget, priority_goals, "
+            "priority_goals_reset, schedule или schedule_off.")
     client = ctx.direct()
     try:
         found = await client.get_all(
@@ -1369,7 +1483,9 @@ async def _prepare_campaigns_update(
                 "SelectionCriteria": {"Ids": params.campaign_ids},
                 # v1.8.0: Type через v501 (v5 отдаёт устаревший TEXT_CAMPAIGN
                 # для ЕПК) — для выбора блока стратегии и версии запроса.
-                "FieldNames": ["Id", "Name", "Type", "ExcludedSites", "DailyBudget"],
+                "FieldNames": ["Id", "Name", "Type", "ExcludedSites",
+                               "DailyBudget"]
+                + (["TimeTargeting"] if schedule_wanted else []),
                 # v1.16.0: ключевые цели и пакетная стратегия — из того же
                 # чтения (лишний запрос платить баллами нельзя).
                 "TextCampaignFieldNames": ["BiddingStrategy", "PriorityGoals",
@@ -1472,6 +1588,31 @@ async def _prepare_campaigns_update(
                 "PriorityGoals": ({"Items": given["_priority_goals"]}
                                   if goals_wanted else None),
             }
+    schedule_desc: dict[int, str] = {}
+    if given.get("_time_targeting") is not None:
+        want = given["_time_targeting"]
+        new_items = _schedule_items(want["days"], want["hours"])
+        for body in bodies:
+            cid = body["Id"]
+            cur_tt = next(
+                (i.get("TimeTargeting") for i in found if int(i["Id"]) == cid),
+                None,
+            )
+            cur_tt = cur_tt if isinstance(cur_tt, dict) else {}
+            tt: dict = {
+                "Schedule": {"Items": new_items},
+                # Поле обязательно в TimeTargeting — сохраняем текущее.
+                "ConsiderWorkingWeekends":
+                    cur_tt.get("ConsiderWorkingWeekends") or "NO",
+            }
+            hol = cur_tt.get("HolidaysSchedule")
+            if isinstance(hol, dict) and hol.get("SuspendOnHolidays"):
+                tt["HolidaysSchedule"] = hol
+            body["TimeTargeting"] = tt
+            schedule_desc[cid] = (
+                f"расписание: {_fmt_schedule(cur_tt)} → "
+                f"{_fmt_schedule({'Schedule': {'Items': new_items}})}"
+            )
     desc = []
     warnings: list[str] = list(track_warnings)
     if params.name is not None:
@@ -1548,7 +1689,8 @@ async def _prepare_campaigns_update(
     lines = [f"{names[cid]} ({cid}): " + "; ".join(
         desc + ([excl_desc[cid]] if cid in excl_desc else [])
         + ([budget_desc[cid]] if cid in budget_desc else [])
-        + ([goals_desc[cid]] if cid in goals_desc else []))
+        + ([goals_desc[cid]] if cid in goals_desc else [])
+        + ([schedule_desc[cid]] if cid in schedule_desc else []))
         for cid in params.campaign_ids]
     return {
         "before": names,
@@ -1572,6 +1714,17 @@ async def _verify_campaigns_updated(ctx: Ctx, entry: AccountEntry, plan) -> dict
     want_reset = bool(params.get("priority_goals_reset"))
     goals_checked = want_goals is not None or want_reset
     want_keys = _goal_keys([_goal_item(g) for g in want_goals]) if want_goals else set()
+    want_schedule = params.get("schedule")
+    schedule_off = bool(params.get("schedule_off"))
+    schedule_checked = want_schedule is not None or schedule_off
+    want_slots: set[tuple[int, int]] = set()
+    if schedule_checked:
+        want_days = (list(want_schedule.get("days")) if want_schedule
+                     else list(range(1, 8)))
+        want_hours = (_schedule_hours(want_schedule) if want_schedule
+                      else list(range(24)))
+        want_slots = {(int(d), int(h)) for d in want_days for h in want_hours}
+    full_day = {(d, h) for d in range(1, 8) for h in range(24)}
 
     def _check(current: dict) -> list[str]:
         bad: list[str] = []
@@ -1613,6 +1766,16 @@ async def _verify_campaigns_updated(ctx: Ctx, entry: AccountEntry, plan) -> dict
                         f"{cid}.priority_goals: "
                         f"{sorted((g, v) for g, v, _ in got_keys)}"
                     )
+            if schedule_checked:
+                cur_tt = cur.get("TimeTargeting")
+                got_slots = _schedule_slots(cur_tt)
+                has_schedule = bool(
+                    isinstance(cur_tt, dict) and cur_tt.get("Schedule"))
+                # API может не отдавать Schedule для «круглосуточно».
+                if got_slots != want_slots and not (
+                    want_slots == full_day and not has_schedule and not got_slots
+                ):
+                    bad.append(f"{cid}.schedule: {len(got_slots)} часов")
         return bad
 
     async def _read() -> dict:
@@ -1623,7 +1786,8 @@ async def _verify_campaigns_updated(ctx: Ctx, entry: AccountEntry, plan) -> dict
                 {
                     "SelectionCriteria": {"Ids": params["campaign_ids"]},
                     "FieldNames": ["Id", "Name", "EndDate", "NegativeKeywords",
-                                   "ExcludedSites", "DailyBudget"],
+                                   "ExcludedSites", "DailyBudget"]
+                    + (["TimeTargeting"] if schedule_checked else []),
                     "TextCampaignFieldNames": ["PriorityGoals"],
                     "UnifiedCampaignFieldNames": ["PriorityGoals"],
                 },
@@ -1671,7 +1835,9 @@ async def _verify_campaigns_updated(ctx: Ctx, entry: AccountEntry, plan) -> dict
 
 write_action(
     "campaigns_update",
-    "Изменение кампаний: даты, минусы, исключения площадок, tracking_params, "
+    "Изменение кампаний: даты, расписание показов (schedule: дни 1–7 и часы "
+    "0–23 либо from_hour–to_hour; schedule_off — круглосуточно), минусы, "
+    "исключения площадок, tracking_params, "
     "имя, дневной бюджет, стратегия, ключевые цели (priority_goals — "
     "ценности в ₽, набор заменяется целиком; сброс — priority_goals_reset) "
     "(бюджет/стратегия/цели/имя — по политике guard: "
@@ -1679,7 +1845,8 @@ write_action(
     "ENABLE_AREA_OF_INTEREST_TARGETING только читается — запись отклоняется)",
     ("изменить кампанию", "campaigns", "update", "настройки кампании",
      "исключить площадки", "excluded", "ключевые цели", "цели кампании",
-     "ценность конверсии", "priority goals"),
+     "ценность конверсии", "priority goals", "расписание", "часы работы",
+     "время показов", "time targeting", "schedule"),
     CampaignsUpdateParams,
     prepare=_prepare_campaigns_update,
     apply=lambda ctx, entry, plan: _apply_batch_campaigns(ctx, entry, plan),

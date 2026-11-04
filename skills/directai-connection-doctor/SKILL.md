@@ -2,7 +2,7 @@
 name: "directai-connection-doctor"
 description: "Диагностика подключения Direct AI MCP: directai-mcp doctor --json, разбор и один готовый блок PowerShell для починки. Триггеры: MCP не работает, os error 32, Hermes не видит сервер, коды 513/58/53."
 metadata:
-  directai_mcp: "1.17.3"
+  directai_mcp: "1.17.4"
 ---
 
 # DirectAI Connection Doctor
