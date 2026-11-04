@@ -1124,8 +1124,7 @@ class ScheduleSpec(BaseModel):
                 "schedule: укажите либо hours, либо from_hour+to_hour.")
         if self.hours is not None:
             hours = list(self.hours)
-            if not hours:
-                raise ValueError("schedule.hours: пустой список.")
+            # Пустой список — выключить эти дни (часы не показываются).
             if len(set(hours)) != len(hours):
                 raise ValueError("schedule.hours: часы повторяются.")
             bad = [h for h in hours if not 0 <= h <= 23]
@@ -1154,20 +1153,37 @@ def _schedule_hours(spec: ScheduleSpec | dict) -> list[int]:
     return list(range(int(start), int(stop)))
 
 
-def _schedule_items(days: list[int], hours: list[int]) -> list[str]:
+def _schedule_items(by_day: dict[int, object]) -> list[str]:
     """Schedule.Items API: «D,h0..h23», где 100 — час включён, 0 — выключен.
 
     Все семь дней: день без показов — строка из нулей.
     """
-    chosen = set(hours)
-    on = set(days)
     return [
         ",".join(
-            [str(d)] + ["100" if (h in chosen and d in on) else "0"
+            [str(d)] + ["100" if h in (by_day.get(d) or ()) else "0"
                         for h in range(24)]
         )
         for d in range(1, 8)
     ]
+
+
+def _schedule_by_day(time_targeting: object) -> dict[int, set[int]] | None:
+    """Часы по дням. None — ограничения нет (Schedule в ответе отсутствует)."""
+    tt = time_targeting if isinstance(time_targeting, dict) else {}
+    sched = tt.get("Schedule")
+    if not sched:
+        return None
+    items = sched.get("Items") if isinstance(sched, dict) else sched
+    by_day: dict[int, set[int]] = {d: set() for d in range(1, 8)}
+    for raw in items or []:
+        try:
+            nums = [int(p) for p in str(raw).split(",")]
+        except ValueError:
+            continue
+        if len(nums) != 25 or not 1 <= nums[0] <= 7:
+            continue
+        by_day[nums[0]] = {h for h, pct in enumerate(nums[1:]) if pct > 0}
+    return by_day
 
 
 def _schedule_slots(time_targeting: object) -> set[tuple[int, int]]:
@@ -1435,7 +1451,10 @@ async def _prepare_campaigns_update(
                       if params.schedule is not None else list(range(24)))
         want_days = (list(params.schedule.days)
                      if params.schedule is not None else list(range(1, 8)))
-        given["_time_targeting"] = {"days": want_days, "hours": want_hours}
+        given["_time_targeting"] = {
+            "days": want_days, "hours": want_hours,
+            "off": bool(params.schedule_off),
+        }
     if params.end_date is not None:
         given["EndDate"] = params.end_date
     if params.negatives is not None:
@@ -1591,7 +1610,6 @@ async def _prepare_campaigns_update(
     schedule_desc: dict[int, str] = {}
     if given.get("_time_targeting") is not None:
         want = given["_time_targeting"]
-        new_items = _schedule_items(want["days"], want["hours"])
         for body in bodies:
             cid = body["Id"]
             cur_tt = next(
@@ -1599,8 +1617,27 @@ async def _prepare_campaigns_update(
                 None,
             )
             cur_tt = cur_tt if isinstance(cur_tt, dict) else {}
+            # v1.17.5: меняются только перечисленные дни, остальные остаются
+            # как были. Нет ограничения в ответе — база «круглосуточно».
+            base = _schedule_by_day(cur_tt)
+            by_day: dict[int, set[int]] = (
+                {d: set(range(24)) for d in range(1, 8)} if base is None
+                else {d: set(base.get(d) or ()) for d in range(1, 8)}
+            )
+            if want["off"]:
+                by_day = {d: set(range(24)) for d in range(1, 8)}
+            else:
+                hours = set(want["hours"])
+                for day in want["days"]:
+                    by_day[day] = set(hours)
+            if not any(by_day.values()):
+                raise ValueError(
+                    f"кампания {cid}: в итоговом расписании нет ни одного "
+                    "часа показов. Снять все показы расписанием нельзя — "
+                    "это пауза кампании (campaigns_state).")
+            items = _schedule_items(by_day)
             tt: dict = {
-                "Schedule": {"Items": new_items},
+                "Schedule": {"Items": items},
                 # Поле обязательно в TimeTargeting — сохраняем текущее.
                 "ConsiderWorkingWeekends":
                     cur_tt.get("ConsiderWorkingWeekends") or "NO",
@@ -1611,7 +1648,7 @@ async def _prepare_campaigns_update(
             body["TimeTargeting"] = tt
             schedule_desc[cid] = (
                 f"расписание: {_fmt_schedule(cur_tt)} → "
-                f"{_fmt_schedule({'Schedule': {'Items': new_items}})}"
+                f"{_fmt_schedule({'Schedule': {'Items': items}})}"
             )
     desc = []
     warnings: list[str] = list(track_warnings)
@@ -1714,16 +1751,16 @@ async def _verify_campaigns_updated(ctx: Ctx, entry: AccountEntry, plan) -> dict
     want_reset = bool(params.get("priority_goals_reset"))
     goals_checked = want_goals is not None or want_reset
     want_keys = _goal_keys([_goal_item(g) for g in want_goals]) if want_goals else set()
-    want_schedule = params.get("schedule")
-    schedule_off = bool(params.get("schedule_off"))
-    schedule_checked = want_schedule is not None or schedule_off
-    want_slots: set[tuple[int, int]] = set()
-    if schedule_checked:
-        want_days = (list(want_schedule.get("days")) if want_schedule
-                     else list(range(1, 8)))
-        want_hours = (_schedule_hours(want_schedule) if want_schedule
-                      else list(range(24)))
-        want_slots = {(int(d), int(h)) for d in want_days for h in want_hours}
+    # v1.17.5: ожидаемое расписание берём из самого тела запроса — оно уже
+    # слито с текущим (меняются только указанные дни).
+    sent_schedule: dict[int, dict] = {}
+    for req in requests:
+        if len(req) < 3 or req[1] != "update" or req[0] != "campaigns":
+            continue
+        for body in (req[2] or {}).get("Campaigns") or []:
+            if isinstance(body, dict) and body.get("TimeTargeting"):
+                sent_schedule[int(body["Id"])] = body["TimeTargeting"]
+    schedule_checked = bool(sent_schedule)
     full_day = {(d, h) for d in range(1, 8) for h in range(24)}
 
     def _check(current: dict) -> list[str]:
@@ -1766,9 +1803,10 @@ async def _verify_campaigns_updated(ctx: Ctx, entry: AccountEntry, plan) -> dict
                         f"{cid}.priority_goals: "
                         f"{sorted((g, v) for g, v, _ in got_keys)}"
                     )
-            if schedule_checked:
+            if schedule_checked and cid in sent_schedule:
                 cur_tt = cur.get("TimeTargeting")
                 got_slots = _schedule_slots(cur_tt)
+                want_slots = _schedule_slots(sent_schedule[cid])
                 has_schedule = bool(
                     isinstance(cur_tt, dict) and cur_tt.get("Schedule"))
                 # API может не отдавать Schedule для «круглосуточно».
