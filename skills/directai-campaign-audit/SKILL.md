@@ -2,7 +2,7 @@
 name: "directai-campaign-audit"
 description: "Аудит кампании Яндекс Директа v2.0: проверка данных, поиск проблем и роста, рекомендации с доказательствами, отчёты MD/XLSX/HTML. Только чтение. Триггеры: разбери кампанию, почему просела, что улучшить, аудит, ID кампании."
 metadata:
-  directai_mcp: "1.17.2"
+  directai_mcp: "1.17.3"
 ---
 
 # DirectAI Campaign Audit v2.0

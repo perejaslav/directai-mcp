@@ -5,7 +5,7 @@
 - `directai-connection-doctor`: шаг сверки версий в порядке работы,
   `scripts/check-versions.ps1` (читает `metadata.directai_mcp`, сравнивает
   с `directai-mcp --version`, коды 0/2/1), playbook на WARN и FAIL.
-- Все скиллы семейства объявляют `metadata.directai_mcp: "1.17.2"`.
+- Все скиллы семейства объявляют `metadata.directai_mcp: "1.17.3"`.
 - `directai-campaign-audit` догнал локальную v2.0: `scripts/auditlib/`,
   тесты (198), примеры, реестр действий `references/tool-contract.md`.
   Раньше в репозитории лежала тонкая версия на 3 файла.
@@ -13,6 +13,16 @@
   «v1.11»; правило про сверку версии перед первым `plan_write`.
 - `playbooks.md`: ссылка на `examples/harness-configs.md` помечена как путь
   репозитория — рядом с установленным скиллом этой папки нет.
+
+## v1.17.3 (2026-11-04) — справочник интересов в dictionaries_get
+
+- `dictionaries_get` принимает `dictionary=AudienceInterests`: `name='*'` —
+  всё дерево, иначе поиск по пути категории или по Id из набора «Интересы
+  и привычки». Одна строка на интерес: InterestKey, путь, Id для
+  краткосрочного/долгосрочного/любого типа, описание.
+- `ParentId` в ответе API ссылается на `Id` (1/2/3 + InterestKey), а не на
+  InterestKey — путь строится по этой связи. Проверено на живом API:
+  441 интерес.
 
 ## v1.17.2 (2026-10-04) — Security: токен Директа не попадает в лог
 

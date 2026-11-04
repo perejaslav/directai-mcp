@@ -251,7 +251,7 @@ MCP-сервер»; если `server_version` ≠ `code_version` — «пере�
 | `audiences_list` | Аудиторные условия и списки ретаргетинга |
 | `bids_get` | Ставки фраз (поиск и сети) |
 | `bid_modifiers_get` | Корректировки ставок |
-| `dictionaries_get` | Справочники (регионы по названию) |
+| `dictionaries_get` | Справочники: регионы по названию, интересы и привычки (AudienceInterests) |
 | `changes_check` | Что менялось с даты |
 | `accounts_discover`, `accounts_check`, `accounts_balance` | Кабинеты: поиск, проверка доступа, баллы |
 | `counter_check` | Проверка счётчиков Метрики кампании |
