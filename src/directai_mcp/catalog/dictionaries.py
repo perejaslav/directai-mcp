@@ -13,7 +13,7 @@ from directai_mcp.catalog.registry import Ctx, action
 
 class DictionariesGetParams(BaseModel):
     name: str = Field(min_length=1)
-    dictionary: Literal["GeoRegions"] = "GeoRegions"
+    dictionary: Literal["GeoRegions", "AudienceInterests"] = "GeoRegions"
     limit: int | None = None
     output: Literal["inline", "file"] = "inline"
     format: Literal["json", "md", "csv"] = "json"
@@ -31,8 +31,14 @@ class DictionariesGetParams(BaseModel):
 @action(
     "dictionaries_get",
     "read",
-    "Справочники: поиск региона по названию",
     (
+        "Справочники: поиск региона по названию; dictionary=AudienceInterests — "
+        "интересы и привычки (name='*' — все; поиск по названию или Id из набора)"
+    ),
+    (
+        "интересы",
+        "привычки",
+        "AudienceInterests",
         "регион",
         "dictionaries",
         "справочник",
@@ -47,6 +53,8 @@ async def _get(ctx: Ctx, params: BaseModel) -> str:
     assert isinstance(params, DictionariesGetParams)
     mark = "[ПЕСОЧНИЦА] " if ctx.sandbox else ""
     tally: dict = {}
+    if params.dictionary == "AudienceInterests":
+        return await _interests(ctx, params, mark, tally)
     try:
         regions = await geo_regions(ctx, tally=tally)
     except DirectError as e:
@@ -91,6 +99,85 @@ async def _get(ctx: Ctx, params: BaseModel) -> str:
         dump_raw={"dictionaries_get": [
             dict(m, linked_to_campaign=False) for m in matches]},
         dump_fields={"DictionaryNames": ["GeoRegions"]},
+        dump_tally=tally,
+        dump_logins=[],
+        dump_scope="cabinet",
+    )
+
+
+async def _interests(
+    ctx: Ctx, params: DictionariesGetParams, mark: str, tally: dict
+) -> str:
+    from directai_mcp.api.direct import DirectClient
+
+    client = DirectClient(token=ctx.token, sandbox=ctx.sandbox)
+    try:
+        result = await client.call(
+            "dictionaries", "get", {"DictionaryNames": ["AudienceInterests"]}, None,
+            tally=tally,
+        )
+    except DirectError as e:
+        return f"Ошибка словаря AudienceInterests: {e.human_message()}"
+    finally:
+        await client.aclose()
+    interests = result.get("AudienceInterests") or []
+    # Id = 1/2/3 (SHORT_TERM/LONG_TERM/ANY) + InterestKey; ParentId ссылается на Id.
+    by_id = {i.get("Id"): i for i in interests}
+    ids_by_key: dict = {}
+    for item in interests:
+        ids_by_key.setdefault(item.get("InterestKey"), {})[item.get("InterestType")] = item.get("Id")
+    query = params.name.strip().lower()
+
+    def path(item: dict) -> str:
+        names, seen = [], set()
+        while item and item.get("Id") not in seen:
+            seen.add(item.get("Id"))
+            names.append(str(item.get("Name", "")))
+            item = by_id.get(item.get("ParentId"))
+        return " → ".join(reversed(names))
+
+    rows = []
+    for item in interests:
+        if item.get("InterestType") != "ANY":
+            continue
+        ids = ids_by_key[item.get("InterestKey")]
+        full = path(item)
+        haystack = " ".join([full.lower(), *map(str, ids.values())])
+        if query != "*" and query not in haystack:
+            continue
+        rows.append(
+            {
+                "InterestKey": item.get("InterestKey"),
+                "Путь": full,
+                "Id краткоср.": ids.get("SHORT_TERM") or "—",
+                "Id долгоср.": ids.get("LONG_TERM") or "—",
+                "Id любой": ids.get("ANY") or "—",
+                "Описание": item.get("Description") or "—",
+            }
+        )
+    rows.sort(key=lambda r: r["Путь"])
+    context = (
+        f"{mark}dictionaries_get: AudienceInterests, поиск «{params.name}», "
+        f"совпадений {len(rows)}."
+    )
+    return finalize(
+        ctx,
+        context,
+        "dictionaries_get",
+        ["InterestKey", "Путь", "Id краткоср.", "Id долгоср.", "Id любой", "Описание"],
+        rows,
+        params.limit,
+        params.save_as,
+        [],
+        money_cols=(),
+        output=params.output,
+        format=params.format,
+        dump_dir=params.dump_dir,
+        dump_tag=params.dump_tag,
+        dump_action="dictionaries_get",
+        dump_params=params.model_dump(),
+        dump_raw={"dictionaries_get": [dict(i, linked_to_campaign=False) for i in interests]},
+        dump_fields={"DictionaryNames": ["AudienceInterests"]},
         dump_tally=tally,
         dump_logins=[],
         dump_scope="cabinet",
